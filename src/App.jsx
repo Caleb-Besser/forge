@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { exercises } from "./data/exercises";
 import { supabase } from "./supabaseClient";
@@ -18,36 +18,64 @@ async function signOut() {
 
   console.log("Signed Out");
 }
+
+function formatWorkoutDate(date) {
+  const [year, month, day] = date.split("-").map(Number);
+  const start = new Date(year, month - 1, day);
+  const today = new Date();
+  const diff = Math.floor((today - start) / (1000 * 60 * 60 * 24));
+
+  return diff;
+}
+
 function getLatestWorkoutText(workout, exercise) {
   if (!workout) {
     return "No entry yet";
   }
 
+  const dateDiff = formatWorkoutDate(workout.workout_date);
+  let dateText = "";
+
+  if (dateDiff === 0) {
+    dateText = "Today";
+  } else if (dateDiff === 1) {
+    dateText = "1 day ago";
+  } else if (dateDiff > 5) {
+    dateText = workout.workout_date;
+  } else {
+    dateText = `${dateDiff} days ago`;
+  }
+
   switch (exercise.measurementType) {
     case "reps":
-      return `${workout.workout_date} ${workout.reps ?? 0} reps`;
+      return `${dateText} ${workout.reps ?? 0} reps`;
 
     case "weight_reps":
-      return `${workout.workout_date} ${workout.weight ?? 0} lb × ${workout.reps ?? 0} reps`;
+      return `${dateText} ${workout.weight ?? 0} lb × ${workout.reps ?? 0} reps`;
 
     case "time": {
       const hours = String(workout.hours ?? 0).padStart(2, "0");
       const minutes = String(workout.minutes ?? 0).padStart(2, "0");
       const seconds = String(workout.seconds ?? 0).padStart(2, "0");
-      return `${workout.workout_date} ${hours}:${minutes}:${seconds}`;
+
+      return `${dateText} ${hours}:${minutes}:${seconds}`;
     }
 
     case "distance_time": {
       const hours = String(workout.hours ?? 0).padStart(2, "0");
       const minutes = String(workout.minutes ?? 0).padStart(2, "0");
       const seconds = String(workout.seconds ?? 0).padStart(2, "0");
-      return `${workout.workout_date} ${workout.distance ?? 0} ${workout.distance_unit ?? "mi"} • ${hours}:${minutes}:${seconds}`;
+
+      return `${dateText} ${workout.distance ?? 0} ${
+        workout.distance_unit ?? "mi"
+      } • ${hours}:${minutes}:${seconds}`;
     }
 
     default:
       return "Entry saved";
   }
 }
+
 function App() {
   const [progressRefreshKey, setProgressRefreshKey] = useState(0);
   const [activeExerciseId, setActiveExerciseId] = useState(null);
@@ -60,6 +88,8 @@ function App() {
     {},
   );
   const [selectedScheduleDay, setSelectedScheduleDay] = useState("all");
+  const [showOnlyWithEntries, setShowOnlyWithEntries] = useState(true);
+
   async function loadScheduleRows(userId) {
     const { data, error } = await supabase
       .from("exercise_schedule")
@@ -71,8 +101,9 @@ function App() {
       return;
     }
 
-    setScheduleRows(data);
+    setScheduleRows(data ?? []);
   }
+
   async function loadLatestWorkouts(userId) {
     const { data, error } = await supabase
       .from("workout_logs")
@@ -87,7 +118,7 @@ function App() {
 
     const latestLookup = {};
 
-    data.forEach((workout) => {
+    (data ?? []).forEach((workout) => {
       if (!latestLookup[workout.exercise_id]) {
         latestLookup[workout.exercise_id] = workout;
       }
@@ -95,12 +126,21 @@ function App() {
 
     setLatestWorkoutsByExerciseId(latestLookup);
   }
+
   function showToast(message, type = "success") {
     setNotification({ message, type });
 
     setTimeout(() => {
       setNotification(null);
     }, 3000);
+  }
+
+  function refreshProgress() {
+    setProgressRefreshKey((currentKey) => currentKey + 1);
+
+    if (session?.user?.id) {
+      loadLatestWorkouts(session.user.id);
+    }
   }
 
   const scheduleDaysByExerciseId = useMemo(() => {
@@ -150,6 +190,12 @@ function App() {
     const search = searchText.trim().toLowerCase();
 
     return exercises.filter((exercise) => {
+      const hasEntry = Boolean(latestWorkoutsByExerciseId[exercise.id]);
+
+      if (showOnlyWithEntries && !hasEntry) {
+        return false;
+      }
+
       if (
         selectedScheduleDay !== "all" &&
         !selectedDayExerciseIds.has(exercise.id)
@@ -165,16 +211,16 @@ function App() {
         scheduleDaysByExerciseId[exercise.id]?.join(" ") ?? "";
 
       const searchableText = `
-      ${exercise.name}
-      ${exercise.group}
-      ${exercise.muscleGroup}
-      ${exercise.equipment}
-      ${exercise.equipmentType}
-      ${exercise.primaryMuscles.join(" ")}
-      ${exercise.secondaryMuscles.join(" ")}
-      ${exercise.tags?.join(" ") ?? ""}
-      ${scheduledDaysForExercise}
-    `.toLowerCase();
+        ${exercise.name}
+        ${exercise.group}
+        ${exercise.muscleGroup}
+        ${exercise.equipment}
+        ${exercise.equipmentType}
+        ${exercise.primaryMuscles.join(" ")}
+        ${exercise.secondaryMuscles.join(" ")}
+        ${exercise.tags?.join(" ") ?? ""}
+        ${scheduledDaysForExercise}
+      `.toLowerCase();
 
       return searchableText.includes(search);
     });
@@ -183,15 +229,9 @@ function App() {
     scheduleDaysByExerciseId,
     selectedScheduleDay,
     selectedDayExerciseIds,
+    showOnlyWithEntries,
+    latestWorkoutsByExerciseId,
   ]);
-
-  function refreshProgress() {
-    setProgressRefreshKey((currentKey) => currentKey + 1);
-
-    if (session?.user?.id) {
-      loadLatestWorkouts(session.user.id);
-    }
-  }
 
   useEffect(() => {
     async function getSession() {
@@ -206,19 +246,23 @@ function App() {
 
       setIsLoading(false);
     }
+
     getSession();
+
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session?.user?.id) {
-        loadScheduleRows(session.user.id);
-        loadLatestWorkouts(session.user.id);
+    } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+
+      if (newSession?.user?.id) {
+        loadScheduleRows(newSession.user.id);
+        loadLatestWorkouts(newSession.user.id);
       } else {
         setScheduleRows([]);
         setLatestWorkoutsByExerciseId({});
       }
     });
+
     return () => {
       subscription.unsubscribe();
     };
@@ -240,6 +284,7 @@ function App() {
   return (
     <>
       <ToastNotification notification={notification} />
+
       <main className="app-main">
         <header className="app-header">
           <h1 className="app-title">Workout Assistant</h1>
@@ -248,13 +293,30 @@ function App() {
             className="search-box"
             type="text"
             value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
+            onChange={(event) => setSearchText(event.target.value)}
             placeholder="Search exercises..."
-          ></input>
+          />
+
+          <label className="entries-toggle">
+            <input
+              className="entries-toggle-input"
+              type="checkbox"
+              checked={showOnlyWithEntries}
+              onChange={(event) => setShowOnlyWithEntries(event.target.checked)}
+            />
+
+            <span className="entries-toggle-track" aria-hidden="true">
+              <span className="entries-toggle-thumb" />
+            </span>
+
+            <span className="entries-toggle-text">With entries</span>
+          </label>
 
           <div className="schedule-filter-controls">
             <button
-              className={`today-button ${selectedScheduleDay === todayKey ? "active" : ""}`}
+              className={`today-button ${
+                selectedScheduleDay === todayKey ? "active" : ""
+              }`}
               type="button"
               aria-pressed={selectedScheduleDay === todayKey}
               onClick={() =>
@@ -268,11 +330,14 @@ function App() {
 
             <label className="day-filter-label" htmlFor="day-filter-select">
               <span className="visually-hidden">Filter exercises by day</span>
+
               <select
                 id="day-filter-select"
-                className={`day-filter-select ${selectedScheduleDay !== "all" ? "active" : ""}`}
+                className={`day-filter-select ${
+                  selectedScheduleDay !== "all" ? "active" : ""
+                }`}
                 value={selectedScheduleDay}
-                onChange={(e) => setSelectedScheduleDay(e.target.value)}
+                onChange={(event) => setSelectedScheduleDay(event.target.value)}
               >
                 {scheduleFilterDays.map((day) => (
                   <option key={day.key} value={day.key}>
@@ -287,9 +352,10 @@ function App() {
             Logout
           </button>
         </header>
+
         <section id="exercise-list">
-          {filteredExercises.map((exercise, i) => {
-            let isActive = activeExerciseId === exercise.id;
+          {filteredExercises.map((exercise) => {
+            const isActive = activeExerciseId === exercise.id;
             const latestWorkout = latestWorkoutsByExerciseId[exercise.id];
 
             return (
@@ -302,27 +368,19 @@ function App() {
                 >
                   <div className="horizontal-align">
                     <div className="list-item-name">{exercise.name}</div>
+
                     <div className="last-workout-preview">
+                      <span className="last-workout-label">Last workout</span>
+
                       {latestWorkout ? (
-                        <>
-                          <span className="last-workout-label">
-                            Last workout
-                          </span>
-                          <span className="last-workout-value">
-                            {getLatestWorkoutText(latestWorkout, exercise)}
-                          </span>
-                        </>
+                        <span className="last-workout-value">
+                          {getLatestWorkoutText(latestWorkout, exercise)}
+                        </span>
                       ) : (
-                        <>
-                          <span className="last-workout-label">
-                            Last workout
-                          </span>
-                          <span className="last-workout-empty">
-                            No entry yet
-                          </span>
-                        </>
+                        <span className="last-workout-empty">No entry yet</span>
                       )}
                     </div>
+
                     <div className="list-item-group">{exercise.group}</div>
                     <div className="list-item-equipment">
                       {exercise.equipmentType}
@@ -338,9 +396,6 @@ function App() {
                       fill="none"
                       xmlns="http://www.w3.org/2000/svg"
                       aria-hidden="true"
-                      onClick={() => {
-                        setActiveExerciseId(isActive ? null : exercise.id);
-                      }}
                     >
                       <path
                         d="M6 15L12 9L18 15"
@@ -359,9 +414,6 @@ function App() {
                       fill="none"
                       xmlns="http://www.w3.org/2000/svg"
                       aria-hidden="true"
-                      onClick={() => {
-                        setActiveExerciseId(isActive ? null : exercise.id);
-                      }}
                     >
                       <path
                         d="M6 9L12 15L18 9"
@@ -373,10 +425,9 @@ function App() {
                     </svg>
                   )}
                 </div>
+
                 {isActive && (
-                  <div
-                    className={`list-item-details ${isActive ? "active" : ""}`}
-                  >
+                  <div className="list-item-details active">
                     <div className="details-content-grid">
                       <ExerciseHistoryList
                         exercise={exercise}
@@ -385,6 +436,7 @@ function App() {
 
                       <DetailsBox exercise={exercise} />
                     </div>
+
                     <div className="new-entry-area">
                       <MeasurementsInput
                         measurementType={exercise.measurementType}
@@ -394,7 +446,7 @@ function App() {
                         onScheduleChanged={() =>
                           loadScheduleRows(session.user.id)
                         }
-                      ></MeasurementsInput>
+                      />
                     </div>
                   </div>
                 )}
