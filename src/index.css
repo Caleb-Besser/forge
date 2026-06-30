@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -5,32 +7,33 @@
 }
 
 :root {
-  --bg-dark: #2c3947;
-  --bg-mid: #547a95;
-  --accent: #c2a56d;
-  --accent-bright: #e8edf2;
-  --text-light: #e8edf2;
-  --panel-bg: rgba(44, 57, 71, 0.82);
-  --panel-bg-open: rgba(84, 122, 149, 0.9);
-  --border-soft: rgba(194, 165, 109, 0.38);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  color: #17151f;
+  background: #c4a3e8;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
 }
 
 html,
 body,
 #root {
-  min-height: 100vh;
+  min-height: 100%;
+  background: #c4a3e8;
 }
 
 body {
-  color: var(--text-light);
-  background: radial-gradient(
-    circle at top,
-    rgba(84, 122, 149, 0.95) 0%,
-    var(--bg-dark) 99%
-  );
-  background-repeat: no-repeat;
-  background-size: cover;
-  background-attachment: fixed;
+  min-width: 320px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #c4a3e8;
+}
 
-  font-family: system-ui, Arial, sans-serif;
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  color: inherit;
 }

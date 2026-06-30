@@ -1,0 +1,16 @@
+{
+  "name": "Forge",
+  "short_name": "Forge",
+  "description": "A daily fitness journal and workout log.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f4ff",
+  "theme_color": "#8d68d8",
+  "icons": [
+    {
+      "src": "/forge-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ]
+}

@@ -1,49 +1,75 @@
-import { supabase } from "../supabaseClient";
 import { useState } from "react";
+import { supabase } from "../supabaseClient";
 
-async function signUp(email, password, showToast) {
-  const { data, error } = await supabase.auth.signUp({ email, password });
+export default function LoginScreen({ showToast }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
 
-  if (error) {
-    console.error(error.message);
-    showToast(error.message, "error");
-    return;
+  async function handleAuth(mode) {
+    if (!email.trim() || !password) {
+      setMessage("Enter both your email and password.");
+      return;
+    }
+
+    setBusy(true);
+    setMessage("");
+
+    try {
+      if (mode === "signup") {
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+        });
+        if (error) throw error;
+
+        if (data.session) {
+          showToast("Account created. You are signed in.");
+        } else {
+          setMessage(
+            "Account created. Check your email and confirm the account before logging in.",
+          );
+        }
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error) throw error;
+      if (!data.session) throw new Error("Supabase did not return a login session.");
+      showToast("Logged in successfully.");
+    } catch (error) {
+      console.error(error);
+      setMessage(error.message);
+      showToast(error.message, "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  console.log("Signed up:", data);
-  showToast("Account created. You can log in now.");
-}
-
-async function signIn(email, password, showToast) {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (error) {
-    console.error(error.message);
-    showToast(error.message, "error");
-    return;
-  }
-
-  console.log("Signed In:", data);
-  showToast("Logged in successfully.");
-}
-
-function LoginScreen({ showToast }) {
-  const [userEmail, setUserEmail] = useState("");
-  const [userPassword, setUserPassword] = useState("");
   return (
     <main className="login-main">
-      <section id="input-section">
-        <h1 className="login-title">Workout Assistant</h1>
+      <form
+        id="input-section"
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleAuth("login");
+        }}
+      >
+        <div className="header-kicker">Cloud Workout Log</div>
+        <h1 className="login-title">Forge</h1>
 
         <label>
           Email
           <input
             type="email"
-            value={userEmail}
-            onChange={(e) => setUserEmail(e.target.value)}
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
           />
         </label>
 
@@ -51,31 +77,25 @@ function LoginScreen({ showToast }) {
           Password
           <input
             type="password"
-            value={userPassword}
-            onChange={(e) => {
-              setUserPassword(e.target.value);
-            }}
+            autoComplete="current-password"
+            minLength="6"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            required
           />
         </label>
 
-        <div className="login-buttons">
-          <button
-            type="button"
-            onClick={() => signIn(userEmail, userPassword, showToast)}
-          >
-            Login
-          </button>
+        {message && <p className="auth-message" role="status">{message}</p>}
 
-          <button
-            type="button"
-            onClick={() => signUp(userEmail, userPassword, showToast)}
-          >
+        <div className="login-buttons">
+          <button type="submit" disabled={busy}>
+            {busy ? "Working..." : "Login"}
+          </button>
+          <button type="button" disabled={busy} onClick={() => handleAuth("signup")}>
             Signup
           </button>
         </div>
-      </section>
+      </form>
     </main>
   );
 }
-
-export default LoginScreen;
