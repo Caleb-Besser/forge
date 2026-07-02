@@ -9,7 +9,7 @@
 :root {
   font-family: "Space Grotesk", system-ui, sans-serif;
   color: #17151f;
-  background: #c4a3e8;
+  background: #d2bce8;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -18,14 +18,12 @@ html,
 body,
 #root {
   min-height: 100%;
-  background: #c4a3e8;
 }
 
 body {
   min-width: 320px;
   min-height: 100vh;
   min-height: 100dvh;
-  background: #c4a3e8;
 }
 
 button,

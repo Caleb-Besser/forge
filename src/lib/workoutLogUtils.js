@@ -91,6 +91,7 @@ export function exerciseIconAsset(exercise) {
 
 export function formatLogResult(exercise, log) {
   const sets = log?.exercise_log_sets ?? [];
+  if (log?.notes === "Skipped") return "Skipped day";
   if (!log || !sets.length) return "No history yet";
 
   if (exercise.type === "cardio") {
@@ -168,6 +169,9 @@ export function trendScore(exercise, log) {
 }
 
 export function trendMeta(exercise, log, previousLog) {
+  if (log?.notes === "Skipped") {
+    return { direction: "neutral", symbol: "—", label: "Exercise skipped" };
+  }
   const current = trendScore(exercise, log);
   const previous = trendScore(exercise, previousLog);
   if (current == null || previous == null) {
