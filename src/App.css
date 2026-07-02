@@ -874,6 +874,20 @@ select:focus {
   white-space: normal;
 }
 
+.history-chip-feeling {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
 .history-chip-trend {
   width: 28px;
   height: 28px;
@@ -1077,6 +1091,73 @@ select:focus {
   background: rgba(196, 163, 232, 0.72);
 }
 
+.feeling-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(32, 21, 43, 0.64);
+  backdrop-filter: blur(6px);
+  animation: detail-backdrop-in 180ms ease both;
+}
+
+.feeling-card {
+  width: min(100%, 440px);
+  padding: 26px;
+  border-radius: 30px;
+  background: var(--glass-strong);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  text-align: center;
+  animation: completion-pop 360ms cubic-bezier(.2, 1.35, .45, 1) both;
+}
+
+.feeling-card h2 {
+  margin: 5px 0 4px;
+  font-size: 1.8rem;
+  letter-spacing: -0.04em;
+}
+
+.feeling-card > p {
+  margin: 0 0 18px;
+  color: var(--ink-soft);
+  font-weight: 750;
+}
+
+.feeling-options {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.feeling-options button {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 12px 5px 10px;
+  border: 0;
+  border-radius: 18px;
+  background: #f2edf7;
+  color: var(--ink);
+}
+
+.feeling-options button:hover,
+.feeling-options button:focus-visible {
+  background: #e7d8f6;
+  transform: translateY(-2px);
+}
+
+.feeling-options span {
+  font-size: 1.65rem;
+}
+
+.feeling-options strong {
+  font-size: 0.72rem;
+}
+
 .completion-backdrop {
   position: fixed;
   inset: 0;
@@ -1181,6 +1262,7 @@ html[data-theme="dark"] select,
 html[data-theme="dark"] .set-row,
 html[data-theme="dark"] .mobility-detail-list label,
 html[data-theme="dark"] .history-chip,
+html[data-theme="dark"] .feeling-options button,
 html[data-theme="dark"] .soft-insight {
   background: #281d32;
 }
@@ -1208,9 +1290,24 @@ html[data-theme="dark"] .daily-card small {
 }
 
 html[data-theme="dark"] .detail-shell,
-html[data-theme="dark"] .modal-backdrop {
+html[data-theme="dark"] .modal-backdrop,
+html[data-theme="dark"] .feeling-backdrop {
   background: rgba(9, 6, 13, 0.78);
   backdrop-filter: blur(7px);
+}
+
+html[data-theme="dark"] .feeling-card {
+  border: 1px solid rgba(185, 113, 255, 0.24);
+  background: linear-gradient(155deg, #382447, #26172f);
+}
+
+html[data-theme="dark"] .feeling-options button:hover,
+html[data-theme="dark"] .feeling-options button:focus-visible {
+  background: #4b365a;
+}
+
+html[data-theme="dark"] .history-chip-feeling {
+  background: #3b2949;
 }
 
 html[data-theme="dark"] .detail-card {
@@ -1535,6 +1632,14 @@ html[data-theme="dark"] .soft-button.primary {
 
   .history-chip {
     grid-template-columns: minmax(0, 1fr) 30px;
+  }
+
+  .feeling-card {
+    padding: 22px 14px;
+  }
+
+  .feeling-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .dashboard-controls {

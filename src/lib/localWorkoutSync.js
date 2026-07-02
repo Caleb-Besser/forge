@@ -28,6 +28,10 @@ export function pendingWorkoutCount(userId) {
   return readQueue(userId).length;
 }
 
+export function pendingWorkoutFeeling(userId) {
+  return readQueue(userId).find((item) => item.awaitingFeeling) ?? null;
+}
+
 export function subscribeToWorkoutQueue(userId, onChange) {
   const handleChange = (event) => {
     if (event.detail?.userId === userId) onChange(event.detail.count);
@@ -36,7 +40,17 @@ export function subscribeToWorkoutQueue(userId, onChange) {
   return () => window.removeEventListener(queueEvent, handleChange);
 }
 
-export function queueWorkoutLog(userId, exerciseId, sets, performedDate, notes = "") {
+export function queueWorkoutLog(
+  userId,
+  exerciseId,
+  sets,
+  performedDate,
+  {
+    notes = "",
+    feeling = null,
+    awaitingFeeling = false,
+  } = {},
+) {
   const queue = readQueue(userId);
   const existingIndex = queue.findIndex(
     (item) => item.exerciseId === exerciseId && item.performedDate === performedDate,
@@ -48,6 +62,8 @@ export function queueWorkoutLog(userId, exerciseId, sets, performedDate, notes =
     sets,
     performedDate,
     notes,
+    feeling,
+    awaitingFeeling,
     queuedAt: new Date().toISOString(),
   };
 
@@ -55,6 +71,20 @@ export function queueWorkoutLog(userId, exerciseId, sets, performedDate, notes =
   else queue.push(item);
   writeQueue(userId, queue);
   return item;
+}
+
+export function setQueuedWorkoutFeeling(userId, queueItemId, feeling) {
+  const queue = readQueue(userId);
+  const itemIndex = queue.findIndex((item) => item.id === queueItemId);
+  if (itemIndex < 0) return null;
+
+  queue[itemIndex] = {
+    ...queue[itemIndex],
+    feeling,
+    awaitingFeeling: false,
+  };
+  writeQueue(userId, queue);
+  return queue[itemIndex];
 }
 
 export function mergePendingWorkoutLogs(rows, userId, selectedDate) {
@@ -67,15 +97,25 @@ export function mergePendingWorkoutLogs(rows, userId, selectedDate) {
     );
     if (!item) return exercise;
 
+    const pendingLog = {
+      id: `local-${item.id}`,
+      exercise_id: exercise.id,
+      performed_at: localPerformedAt(item.performedDate),
+      exercise_log_sets: item.sets,
+      notes: item.notes || null,
+      feeling: item.feeling ?? null,
+      pending_sync: true,
+    };
+
     return {
       ...exercise,
-      selected_log: {
-        id: `local-${item.id}`,
-        exercise_id: exercise.id,
-        performed_at: localPerformedAt(item.performedDate),
-        exercise_log_sets: item.sets,
-        pending_sync: true,
-      },
+      selected_log: pendingLog,
+      recent_logs: [
+        pendingLog,
+        ...(exercise.recent_logs ?? []).filter(
+          (log) => new Date(log.performed_at).toISOString().slice(0, 10) !== selectedDate,
+        ),
+      ],
     };
   });
 }
@@ -87,6 +127,7 @@ export function flushPendingWorkoutLogs(userId) {
   activeFlush = (async () => {
     let synced = 0;
     for (const item of readQueue(userId)) {
+      if (item.awaitingFeeling) continue;
       try {
         await saveExerciseLogWithSets(
           item.userId,
@@ -94,6 +135,7 @@ export function flushPendingWorkoutLogs(userId) {
           item.sets,
           item.performedDate,
           item.notes,
+          item.feeling,
         );
         const remaining = readQueue(userId).filter((entry) => entry.id !== item.id);
         writeQueue(userId, remaining);

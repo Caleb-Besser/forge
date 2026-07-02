@@ -646,6 +646,7 @@ export async function saveExerciseLogWithSets(
   sets,
   performedDate,
   notes = "",
+  feeling = null,
 ) {
   const existing = await findExerciseLogForDate(userId, exerciseId, performedDate);
   if (existing) {
@@ -654,6 +655,7 @@ export async function saveExerciseLogWithSets(
       .update({
         performed_at: performedAtFromDate(performedDate),
         notes: notes || null,
+        feeling,
       })
       .eq("id", existing.id);
     assertResult(error);
@@ -668,6 +670,7 @@ export async function saveExerciseLogWithSets(
       exercise_id: exerciseId,
       performed_at: performedAtFromDate(performedDate),
       notes: notes || null,
+      feeling,
     })
     .select()
     .single();
@@ -682,10 +685,15 @@ export async function saveExerciseLogWithSets(
 
 export const createExerciseLogWithSets = saveExerciseLogWithSets;
 
-export async function updateExerciseLogWithSets(logId, sets, notes = "") {
+export async function updateExerciseLogWithSets(
+  logId,
+  sets,
+  notes = "",
+  feeling = null,
+) {
   const { data: log, error } = await supabase
     .from("exercise_logs")
-    .update({ notes: notes || null })
+    .update({ notes: notes || null, feeling })
     .eq("id", logId)
     .select()
     .single();

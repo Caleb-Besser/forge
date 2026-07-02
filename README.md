@@ -1,16 +1,50 @@
-# React + Vite
+# Forge
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Forge is an offline-friendly daily workout journal built with React, Vite, and
+Supabase. It supports weighted, bodyweight, timed, cardio, mobility, and
+superset exercises, along with recent-history trends, timers, workout feelings,
+and local queueing when the network is unavailable.
 
-Currently, two official plugins are available:
+## Local setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Install dependencies with `npm install`.
+2. Create `.env.local`:
 
-## React Compiler
+   ```text
+   VITE_SUPABASE_URL=your-project-url
+   VITE_SUPABASE_ANON_KEY=your-anon-key
+   ```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+3. Apply every SQL file in `supabase/migrations` to the Supabase project in
+   filename order.
+4. Start Forge with `npm run dev`.
 
-## Expanding the ESLint configuration
+## Quality checks
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```sh
+npm run lint
+npm test
+npm run build
+```
+
+## Project map
+
+- `src/components/workout/WorkoutLogPage.jsx` coordinates dashboard state,
+  persistence, offline synchronization, and modal flow.
+- `src/components/workout/DashboardCard.jsx` renders an exercise on the daily
+  checklist.
+- `src/components/workout/WorkoutFeelingPrompt.jsx` owns the post-save feeling
+  choice.
+- `src/components/workout/WorkoutOverlays.jsx` contains page-level timers,
+  loading, and completion overlays.
+- `src/lib/workoutLogUtils.js` contains pure formatting, draft conversion,
+  trend, and progression logic. Keep calculation code here so it remains easy
+  to test.
+- `src/lib/localWorkoutSync.js` owns the local persistence queue and sync retry
+  behavior.
+- `src/lib/workoutApi.js` is the Supabase data-access layer.
+- `supabase/migrations` is the ordered database schema history.
+
+Workout feelings are stored on `exercise_logs`. Pending logs remain local until
+the feeling prompt is answered, so the save flow works consistently online and
+offline.
