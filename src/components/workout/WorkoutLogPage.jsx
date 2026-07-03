@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  addMissingDefaultExercises,
   createExercise,
-  deactivateDuplicateExercises,
-  deactivateLegacyLateralRaiseSuperset,
-  deactivateExercise,
   deleteExerciseLog,
+  ensureDefaultWeeklyRoutine,
   getDailyWorkoutDashboard,
   moveExerciseTo,
-  reconcileAliasedExercises,
-  seedDefaultRoutineIfEmpty,
-  syncDefaultRoutine,
+  removeExerciseFromWorkout,
   updateExercise,
 } from "../../lib/workoutApi";
 import {
@@ -37,24 +32,13 @@ import {
   trendMeta,
   updateDraftSet,
 } from "../../lib/workoutLogUtils";
-import { WORKOUT_FEELINGS, workoutFeeling } from "../../lib/workoutFeelings";
-import {
-  createGuidedSession,
-  nextIncompleteExercise,
-  previousExercise,
-  readGuidedSession,
-  readWorkoutMode,
-  remainingTimerSeconds,
-  skippedSetsForExercise,
-  SKIPPED_LOG_NOTE,
-  writeGuidedSession,
-  writeWorkoutMode,
-} from "../../lib/guidedSession";
+import { workoutFeeling } from "../../lib/workoutFeelings";
+import { guideMoment } from "../../lib/mascotGuide";
 import AddExerciseModal from "./AddExerciseModal";
 import DashboardCard from "./DashboardCard";
 import EditExerciseModal from "./EditExerciseModal";
 import ExerciseIconSlot from "./ExerciseIconSlot";
-import GuidedSession from "./GuidedSession";
+import MascotGuide from "./MascotGuide";
 import RemoveExerciseModal from "./RemoveExerciseModal";
 import WorkoutFeelingPrompt from "./WorkoutFeelingPrompt";
 import {
@@ -70,6 +54,12 @@ const breakPresets = [
   { label: "90s", seconds: 90 },
   { label: "2m", seconds: 120 },
 ];
+const SKIPPED_LOG_NOTE = "Skipped";
+
+function remainingTimerSeconds(timer, now = Date.now()) {
+  if (!timer?.endsAt) return 0;
+  return Math.max(0, Math.ceil((timer.endsAt - now) / 1000));
+}
 
 function setupErrorMessage(error) {
   const message = error?.message || "Could not load your routine.";
@@ -395,39 +385,16 @@ function ExerciseDetail({
   onStartBreak,
   breakTimerActive,
   busy,
-  presentation = "modal",
-  progressLabel = "",
-  initialDraft = null,
-  initialSetTimer = null,
-  inlineFeeling = null,
-  onInlineFeelingChange,
-  onDraftChange,
-  onSetTimerChange,
 }) {
   const [draft, setDraft] = useState(
-    () => initialDraft ?? draftFromLog(exercise, exercise.selected_log),
+    () => draftFromLog(exercise, exercise.selected_log),
   );
   const [editingLog, setEditingLog] = useState(exercise.selected_log);
-  const [setTimer, setSetTimer] = useState(initialSetTimer);
+  const [setTimer, setSetTimer] = useState(null);
   const [blockedTimerTarget, setBlockedTimerTarget] = useState("");
-  const onDraftChangeRef = useRef(onDraftChange);
-  const onSetTimerChangeRef = useRef(onSetTimerChange);
   const history = exercise.recent_logs ?? [];
   const insight = useMemo(() => setupInsight(exercise), [exercise]);
   const setTimerActive = Boolean(setTimer);
-
-  useEffect(() => {
-    onDraftChangeRef.current = onDraftChange;
-    onSetTimerChangeRef.current = onSetTimerChange;
-  }, [onDraftChange, onSetTimerChange]);
-
-  useEffect(() => {
-    onDraftChangeRef.current?.(draft);
-  }, [draft]);
-
-  useEffect(() => {
-    onSetTimerChangeRef.current?.(setTimer);
-  }, [setTimer]);
 
   useEffect(() => {
     if (!blockedTimerTarget) return undefined;
@@ -471,30 +438,22 @@ function ExerciseDetail({
   }
 
   return (
-    <div
-      className={presentation === "guided" ? "guided-detail-shell" : "detail-shell"}
-      role={presentation === "guided" ? undefined : "dialog"}
-      aria-modal={presentation === "guided" ? undefined : "true"}
-    >
+    <div className="detail-shell" role="dialog" aria-modal="true">
       <section className="detail-card">
-        {presentation !== "guided" && (
-          <button className="detail-close" type="button" onClick={onClose} aria-label="Close detail">{"\u00d7"}</button>
-        )}
+        <button className="detail-close" type="button" onClick={onClose} aria-label="Close detail">{"\u00d7"}</button>
         <header className="detail-header">
           <ExerciseIconSlot exercise={exercise} large />
           <div>
             <span className="detail-kicker">
-              {progressLabel || (
-                editingLog
-                  ? `Editing ${displayDate(logDateValue(editingLog))} log`
-                  : `Logging ${displayDate(selectedDate)}`
-              )}
+              {editingLog
+                ? `Editing ${displayDate(logDateValue(editingLog))} log`
+                : `Logging ${displayDate(selectedDate)}`}
             </span>
             <h2>{exercise.name}</h2>
           </div>
         </header>
 
-        {insight && presentation !== "guided" && <p className="soft-insight">{insight}</p>}
+        {insight && <p className="soft-insight">{insight}</p>}
 
         <div className="detail-toolbar">
           <button className="soft-button secondary" type="button" onClick={repeatLast} disabled={!history.length}>
@@ -521,7 +480,6 @@ function ExerciseDetail({
               exercise,
               setsFromDraft(exercise, draft),
               editingLog ? logDateValue(editingLog) : selectedDate,
-              inlineFeeling,
             );
           }}
         >
@@ -535,27 +493,6 @@ function ExerciseDetail({
             blockedPulse={blockedTimerTarget === "set"}
             onTimerBlocked={() => showTimerBlocked("set")}
           />
-          {presentation === "guided" && (
-            <fieldset className="inline-feeling">
-              <legend>How did that feel? <span>Optional</span></legend>
-              <div>
-                {WORKOUT_FEELINGS.map((feeling) => (
-                  <button
-                    key={feeling.value}
-                    type="button"
-                    className={inlineFeeling === feeling.value ? "is-selected" : ""}
-                    aria-pressed={inlineFeeling === feeling.value}
-                    onClick={() => onInlineFeelingChange?.(
-                      inlineFeeling === feeling.value ? null : feeling.value,
-                    )}
-                  >
-                    <span aria-hidden="true">{feeling.emoji}</span>
-                    {feeling.label}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-          )}
           <div className="log-action-row">
             {exercise.type === "timed" && setTimer && (
               <div className="set-timer-overlay" role="timer">
@@ -617,13 +554,9 @@ function ExerciseDetail({
 
 export default function WorkoutLogPage({ user, onSignOut, showToast }) {
   const today = localDateValue();
-  const storedGuidedSession = readGuidedSession(user.id, today);
   const [exercises, setExercises] = useState([]);
+  const [workout, setWorkout] = useState(null);
   const [selectedDate, setSelectedDate] = useState(today);
-  const [workoutMode, setWorkoutMode] = useState(() => readWorkoutMode(user.id));
-  const [guidedSession, setGuidedSession] = useState(
-    () => storedGuidedSession ?? createGuidedSession(today),
-  );
   const [selectedExercise, setSelectedExercise] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -632,11 +565,7 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [removing, setRemoving] = useState(null);
-  const [breakTimer, setBreakTimer] = useState(() => (
-    storedGuidedSession?.breakTimer?.endsAt > Date.now()
-      ? storedGuidedSession.breakTimer
-      : null
-  ));
+  const [breakTimer, setBreakTimer] = useState(null);
   const [timerNow, setTimerNow] = useState(() => Date.now());
   const [celebrating, setCelebrating] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("workout-theme") || "light");
@@ -646,18 +575,8 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
   );
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
-  const [loadedDate, setLoadedDate] = useState("");
   const selectedDateRef = useRef(selectedDate);
   const lastLoadedDateRef = useRef("");
-  const guidedReconciledRef = useRef(false);
-
-  useEffect(() => {
-    writeWorkoutMode(user.id, workoutMode);
-  }, [user.id, workoutMode]);
-
-  useEffect(() => {
-    writeGuidedSession(user.id, guidedSession);
-  }, [guidedSession, user.id]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -671,10 +590,10 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
   }, [selectedDate]);
 
   const loadRoutine = useCallback(async () => {
-    const remoteRows = await getDailyWorkoutDashboard(user.id, selectedDate);
-    const rows = mergePendingWorkoutLogs(remoteRows, user.id, selectedDate);
+    const dashboard = await getDailyWorkoutDashboard(user.id, selectedDate);
+    const rows = mergePendingWorkoutLogs(dashboard.exercises, user.id, selectedDate);
     lastLoadedDateRef.current = selectedDate;
-    setLoadedDate(selectedDate);
+    setWorkout(dashboard.workout);
     setExercises(rows);
     setSelectedExercise((current) => {
       if (!current) return null;
@@ -706,35 +625,21 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
       setLoading(true);
       setLoadError("");
       try {
-        await seedDefaultRoutineIfEmpty(user.id);
-        const reconciledCount = await reconcileAliasedExercises(user.id);
-        await addMissingDefaultExercises(user.id);
-        await syncDefaultRoutine(user.id);
-        const splitCount = await deactivateLegacyLateralRaiseSuperset(user.id);
-        const duplicateCount = await deactivateDuplicateExercises(user.id);
-        const remoteRows = await getDailyWorkoutDashboard(user.id, selectedDateRef.current);
+        await ensureDefaultWeeklyRoutine(user.id);
+        const dashboard = await getDailyWorkoutDashboard(user.id, selectedDateRef.current);
         const rows = mergePendingWorkoutLogs(
-          remoteRows,
+          dashboard.exercises,
           user.id,
           selectedDateRef.current,
         );
         lastLoadedDateRef.current = selectedDateRef.current;
         if (active) {
-          setLoadedDate(selectedDateRef.current);
+          setWorkout(dashboard.workout);
           setExercises(rows);
           setSelectedExercise((current) => {
             if (!current) return null;
             return rows.find((exercise) => exercise.id === current.id) ?? null;
           });
-        }
-        if (active && splitCount) {
-          showToast("Split lateral raises into separate exercises.");
-        }
-        if (active && duplicateCount) {
-          showToast(`Removed ${duplicateCount} duplicate exercises.`);
-        }
-        if (active && reconciledCount) {
-          showToast("Merged Hanging L-Raises and restored its history.");
         }
       } catch (error) {
         console.error(error);
@@ -776,48 +681,9 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
     if (!breakTimer?.endsAt || breakTimer.endsAt > timerNow) return undefined;
     const doneTimer = window.setTimeout(() => {
       setBreakTimer(null);
-      setGuidedSession((current) => ({ ...current, breakTimer: null }));
     }, 900);
     return () => window.clearTimeout(doneTimer);
   }, [breakTimer, timerNow]);
-
-  useEffect(() => {
-    if (
-      guidedReconciledRef.current
-      || workoutMode !== "guided"
-      || selectedDate !== today
-      || loadedDate !== today
-      || loading
-      || !exercises.length
-    ) {
-      return;
-    }
-    guidedReconciledRef.current = true;
-    setGuidedSession((current) => {
-      const base = current?.date === today ? current : createGuidedSession(today);
-      const incomplete = nextIncompleteExercise(exercises, base.currentExerciseId);
-      if (base.status === "active" && !incomplete) {
-        return {
-          ...base,
-          status: "complete",
-          currentExerciseId: null,
-          completedAt: base.completedAt ?? new Date().toISOString(),
-        };
-      }
-      if (base.status === "active" && exercises.find(
-        (exercise) => exercise.id === base.currentExerciseId,
-      )?.selected_log) {
-        return { ...base, currentExerciseId: incomplete?.id ?? null };
-      }
-      if (!base.currentExerciseId) {
-        return {
-          ...base,
-          currentExerciseId: incomplete?.id ?? exercises[0]?.id ?? null,
-        };
-      }
-      return base;
-    });
-  }, [exercises, loadedDate, loading, selectedDate, today, workoutMode]);
 
   async function perform(action, successMessage, { reload = true } = {}) {
     setBusy(true);
@@ -835,27 +701,16 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
     }
   }
 
-  function changeWorkoutMode(mode) {
-    if (mode === "guided") {
-      guidedReconciledRef.current = false;
-      setSelectedDate(today);
-      setSelectedExercise(null);
-    }
-    setWorkoutMode(mode);
-  }
-
   function startBreak(seconds) {
     const timer = {
       duration: seconds,
       endsAt: Date.now() + (seconds * 1000),
     };
     setBreakTimer(timer);
-    setGuidedSession((current) => ({ ...current, breakTimer: timer }));
   }
 
   function quitBreak() {
     setBreakTimer(null);
-    setGuidedSession((current) => ({ ...current, breakTimer: null }));
   }
 
   function commitExerciseLog(
@@ -931,61 +786,6 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
     }
   }
 
-  function updateGuidedSession(kind, exerciseId, value) {
-    setGuidedSession((current) => {
-      if (kind === "draft") {
-        return {
-          ...current,
-          drafts: { ...current.drafts, [exerciseId]: value },
-        };
-      }
-      if (kind === "setTimer") {
-        const setTimers = { ...current.setTimers };
-        if (value) setTimers[exerciseId] = value;
-        else delete setTimers[exerciseId];
-        return { ...current, setTimers };
-      }
-      if (kind === "feeling") {
-        const feelings = { ...current.feelings };
-        if (value) feelings[exerciseId] = value;
-        else delete feelings[exerciseId];
-        return { ...current, feelings };
-      }
-      if (kind === "previous") {
-        const previous = previousExercise(exercises, exerciseId);
-        return previous ? { ...current, currentExerciseId: previous.id } : current;
-      }
-      if (kind === "advance") {
-        const next = nextIncompleteExercise(exercises, exerciseId);
-        const drafts = { ...current.drafts };
-        const setTimers = { ...current.setTimers };
-        const feelings = { ...current.feelings };
-        delete drafts[exerciseId];
-        delete setTimers[exerciseId];
-        delete feelings[exerciseId];
-        if (!next) {
-          return {
-            ...current,
-            status: "complete",
-            currentExerciseId: null,
-            completedAt: new Date().toISOString(),
-            drafts,
-            setTimers,
-            feelings,
-          };
-        }
-        return {
-          ...current,
-          currentExerciseId: next.id,
-          drafts,
-          setTimers,
-          feelings,
-        };
-      }
-      return current;
-    });
-  }
-
   async function finishReorder(targetId = dragOverId, sourceOverride = null) {
     const sourceId = sourceOverride ?? draggingId;
     setDraggingId(null);
@@ -1000,7 +800,7 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
     reordered.splice(targetIndex, 0, moved);
     setExercises(reordered);
     try {
-      await moveExerciseTo(user.id, sourceId, targetId);
+      await moveExerciseTo(workout.id, sourceId, targetId);
       await loadRoutine();
       showToast("Exercise order updated.");
     } catch (error) {
@@ -1105,43 +905,24 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
         </details>
       </header>
 
-      <div className="workout-mode-switcher" aria-label="Workout view">
-        <button
-          type="button"
-          className={workoutMode === "guided" ? "is-active" : ""}
-          aria-pressed={workoutMode === "guided"}
-          onClick={() => changeWorkoutMode("guided")}
-        >
-          Guided
+      <section className="dashboard-controls" aria-label="Workout date controls">
+        <label className="date-control">
+          <span>Date</span>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(event) => setSelectedDate(event.target.value)}
+          />
+        </label>
+        <button className="today-pill" type="button" onClick={() => setSelectedDate(localDateValue())}>
+          Today
         </button>
-        <button
-          type="button"
-          className={workoutMode === "list" ? "is-active" : ""}
-          aria-pressed={workoutMode === "list"}
-          onClick={() => changeWorkoutMode("list")}
-        >
-          List
-        </button>
-      </div>
-
-      {workoutMode === "list" && (
-        <section className="dashboard-controls" aria-label="Workout date controls">
-          <label className="date-control">
-            <span>Date</span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(event) => setSelectedDate(event.target.value)}
-            />
-          </label>
-          <button className="today-pill" type="button" onClick={() => setSelectedDate(localDateValue())}>
-            Today
-          </button>
+        {workout?.id && (
           <button className="soft-button primary add-exercise-button" type="button" onClick={() => setAddOpen(true)}>
             + Add Exercise
           </button>
-        </section>
-      )}
+        )}
+      </section>
       {pendingSyncCount > 0 && (
         <div className="sync-status" role="status">
           <span aria-hidden="true">●</span>
@@ -1149,72 +930,42 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
         </div>
       )}
 
-      {workoutMode === "guided" && loadedDate !== today ? (
-        <section className="guided-loading" aria-live="polite">
-          <div className="loading-mark">F</div>
-          <p>Loading today’s workout…</p>
-        </section>
-      ) : workoutMode === "guided" && exercises.length ? (
-        <GuidedSession
-          exercises={exercises}
-          session={guidedSession}
-          selectedDate={today}
-          busy={busy}
-          breakTimerActive={Boolean(displayedBreakTimer)}
-          onStart={() => {
-            const first = exercises.find((exercise) => !exercise.selected_log) ?? exercises[0];
-            setGuidedSession((current) => ({
-              ...current,
-              status: exercises.every((exercise) => exercise.selected_log)
-                ? "complete"
-                : "active",
-              currentExerciseId: first?.id ?? null,
-              startedAt: current.startedAt ?? new Date().toISOString(),
-              completedAt: exercises.every((exercise) => exercise.selected_log)
-                ? new Date().toISOString()
-                : null,
-            }));
-          }}
-          onCancel={() => {
-            if (!window.confirm(
-              "Cancel this session? Unsaved exercise progress will be discarded. Exercises already saved will be kept.",
-            )) {
-              return;
-            }
-            const firstIncomplete = exercises.find((exercise) => !exercise.selected_log);
-            setBreakTimer(null);
-            setGuidedSession(createGuidedSession(
-              today,
-              firstIncomplete?.id ?? exercises[0]?.id ?? null,
-            ));
-            showToast("Session cancelled. Saved exercises were kept.");
-          }}
-          onSessionChange={updateGuidedSession}
-          onSave={(exercise, sets, logDate, feeling) => commitExerciseLog(
-            exercise,
-            sets,
-            logDate,
-            { feeling, awaitingFeeling: false },
-          )}
-          onSkip={(exercise) => commitExerciseLog(
-            exercise,
-            skippedSetsForExercise(exercise),
-            today,
-            { notes: SKIPPED_LOG_NOTE, awaitingFeeling: false },
-          )}
-          onStartBreak={startBreak}
-          onEditExercise={(exercise) => setEditing(exercise)}
-          onDeleteHistory={async (log) => {
-            if (!window.confirm("Delete this history entry?")) return;
-            await perform(() => deleteExerciseLog(log.id), "History entry deleted.");
-          }}
-          onShowList={() => changeWorkoutMode("list")}
-          renderExercise={({ key, ...props }) => (
-            <ExerciseDetail key={key} {...props} />
-          )}
-        />
-      ) : workoutMode === "list" && exercises.length ? (
-        <section className="daily-card-grid" aria-label="Daily exercise checklist">
+      <MascotGuide
+        compact
+        className="list-mascot"
+        moment={(() => {
+          if (!workout) {
+            return {
+              ...guideMoment({ state: "rest", date: selectedDate }),
+              message: "Rest day. Recover well and come back ready.",
+            };
+          }
+          const completed = exercises.filter((exercise) => exercise.selected_log).length;
+          if (exercises.length > 0 && completed === exercises.length) {
+            return guideMoment({ state: "workoutComplete", date: selectedDate, duo: true });
+          }
+          if (completed > 0) {
+            return guideMoment({ state: "exerciseComplete", date: selectedDate, index: completed });
+          }
+          return guideMoment({
+            state: "greeting",
+            date: selectedDate,
+            exerciseId: exercises[0]?.id,
+            exerciseName: exercises[0]?.name,
+          });
+        })()}
+      />
+
+      {workout && exercises.length ? (
+        <>
+        <div className="routine-heading">
+          <div>
+            <span>{displayDate(selectedDate)}</span>
+            <h2>{workout.name}</h2>
+          </div>
+          <strong>{exercises.filter((exercise) => exercise.selected_log).length}/{exercises.length}</strong>
+        </div>
+        <section className="daily-card-grid" aria-label={`${workout.name} exercise checklist`}>
           {exercises.map((exercise, index) => (
             <DashboardCard
               key={exercise.id}
@@ -1228,28 +979,27 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
                 setDragOverId(id);
               }}
               onDragEnter={setDragOverId}
-              onDragEnd={finishReorder}
-              onGripPointerDown={startPointerReorder}
+                onDragEnd={finishReorder}
+                onGripPointerDown={startPointerReorder}
+                reorderable={exercise.in_workout}
             />
           ))}
         </section>
-      ) : workoutMode === "list" ? (
+        </>
+      ) : workout ? (
         <section className="empty-routine">
-          <h2>Your routine is empty</h2>
-          <p>Add an exercise to start your daily checklist.</p>
+          <h2>{workout.name} is empty</h2>
+          <p>Add an exercise when you are ready to adjust this routine.</p>
           <button className="soft-button primary" type="button" onClick={() => setAddOpen(true)}>Add Exercise</button>
         </section>
       ) : (
-        <section className="empty-routine">
-          <h2>Your routine is empty</h2>
-          <p>Open List Mode to add your first exercise.</p>
-          <button className="soft-button primary" type="button" onClick={() => changeWorkoutMode("list")}>
-            Open List Mode
-          </button>
+        <section className="empty-routine rest-day">
+          <h2>Rest day</h2>
+          <p>No workout is assigned to this weekday.</p>
         </section>
       )}
 
-      {workoutMode === "list" && selectedExercise && (
+      {selectedExercise && (
         <ExerciseDetail
           key={`${selectedExercise.id}-${selectedExercise.selected_log?.id ?? "new"}`}
           exercise={selectedExercise}
@@ -1275,7 +1025,7 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
       )}
 
       <BreakTimer timer={displayedBreakTimer} onQuit={quitBreak} />
-      {workoutMode === "list" && pendingFeeling && (
+      {pendingFeeling && (
         <WorkoutFeelingPrompt
           exerciseName={
             exercises.find((exercise) => exercise.id === pendingFeeling.exerciseId)?.name
@@ -1310,7 +1060,7 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
           }}
         />
       )}
-      {workoutMode === "list" && celebrating && (
+      {celebrating && (
         <CompletionCelebration onClose={() => setCelebrating(false)} />
       )}
 
@@ -1324,7 +1074,7 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
             0,
           ) + 1;
           const saved = await perform(
-            () => createExercise(user.id, values, nextPosition),
+            () => createExercise(user.id, workout.id, values, nextPosition),
             "Exercise added.",
           );
           if (saved) setAddOpen(false);
@@ -1335,10 +1085,10 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
         exercise={editing}
         busy={busy}
         onClose={() => setEditing(null)}
-        onRemove={() => {
+        onRemove={editing?.in_workout ? () => {
           setRemoving(editing);
           setEditing(null);
-        }}
+        } : null}
         onSave={async (values) => {
           const saved = await perform(
             () => updateExercise(editing.id, values),
@@ -1353,8 +1103,8 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
         onClose={() => setRemoving(null)}
         onConfirm={async () => {
           const removed = await perform(
-            () => deactivateExercise(removing.id),
-            "Exercise removed. History preserved.",
+            () => removeExerciseFromWorkout(workout.id, removing.id),
+            `Exercise removed from ${workout.name}. History preserved.`,
           );
           if (removed) setRemoving(null);
         }}

@@ -1,8 +1,8 @@
 import { supabase } from "../supabaseClient";
 import {
+  canonicalExerciseName,
   defaultRoutine,
-  defaultRoutineAliases,
-  retiredDefaultExerciseNames,
+  defaultWorkoutSchedule,
   trackingTypeFor,
 } from "./seedRoutine";
 
@@ -13,374 +13,114 @@ function assertResult(error) {
 }
 
 function normalizedExerciseName(name) {
-  return name.trim().toLocaleLowerCase();
+  return canonicalExerciseName(name).toLocaleLowerCase();
 }
 
-function canonicalDefaultName(name) {
-  const normalized = normalizedExerciseName(name);
-  return defaultRoutineAliases[normalized] ?? name.trim();
-}
-
-function defaultExerciseForName(name) {
-  const canonicalName = canonicalDefaultName(name);
-  return defaultRoutine.find(
-    (exercise) => normalizedExerciseName(exercise.name) === normalizedExerciseName(canonicalName),
-  );
-}
-
-async function seedRoutine(userId) {
-  const { count, error: countError } = await supabase
-    .from("exercises")
+async function seedWeeklyRoutine(userId) {
+  const { count, error: workoutCountError } = await supabase
+    .from("routine_workouts")
     .select("id", { count: "exact", head: true })
-    .eq("user_id", userId);
-  assertResult(countError);
-  if (count) return;
-
-  const exerciseRows = defaultRoutine.map((exercise, index) => ({
-    user_id: userId,
-    name: exercise.name,
-    type: exercise.type,
-    position: index + 1,
-    default_weight: exercise.defaultWeight ?? null,
-    default_sets: exercise.defaultSets ?? 3,
-    is_superset: exercise.type === "superset",
-  }));
-
-  const { data: inserted, error } = await supabase
-    .from("exercises")
-    .insert(exerciseRows)
-    .select();
-  assertResult(error);
-
-  const parts = inserted.flatMap((row) => {
-    const source = defaultRoutine[row.position - 1];
-    return (source.parts ?? []).map((name, index) => ({
-      exercise_id: row.id,
-      name,
-      position: index + 1,
-      tracking_type: trackingTypeFor(row.type),
-    }));
-  });
-
-  if (parts.length) {
-    const { error: partsError } = await supabase.from("exercise_parts").insert(parts);
-    assertResult(partsError);
-  }
-}
-
-export function seedDefaultRoutineIfEmpty(userId) {
-  if (!seedRequests.has(userId)) {
-    seedRequests.set(
-      userId,
-      seedRoutine(userId).finally(() => {
-        seedRequests.delete(userId);
-      }),
-    );
-  }
-
-  return seedRequests.get(userId);
-}
-
-export async function addMissingDefaultExercises(userId) {
-  const { data: existing, error } = await supabase
-    .from("exercises")
-    .select("id, name, position, is_active")
-    .eq("user_id", userId);
-  assertResult(error);
-
-  const existingNames = new Set(
-    (existing ?? [])
-      .filter((exercise) => exercise.is_active)
-      .map((exercise) => normalizedExerciseName(canonicalDefaultName(exercise.name))),
-  );
-  const missing = defaultRoutine.filter(
-    (exercise) => !existingNames.has(normalizedExerciseName(exercise.name)),
-  );
-  if (!missing.length) return 0;
-
-  let nextPosition = (existing ?? []).reduce(
-    (highest, exercise) => Math.max(highest, exercise.position),
-    0,
-  ) + 1;
-
-  const rows = missing.map((exercise) => ({
-    user_id: userId,
-    name: exercise.name,
-    type: exercise.type,
-    position: nextPosition++,
-    default_weight: exercise.defaultWeight ?? null,
-    default_sets: exercise.defaultSets ?? 3,
-    is_superset: exercise.type === "superset",
-  }));
-
-  const { error: insertError } = await supabase.from("exercises").insert(rows);
-  if (insertError?.code !== "23505") assertResult(insertError);
-  return rows.length;
-}
-
-export async function syncDefaultRoutine(userId) {
-  const { data: rows, error } = await supabase
-    .from("exercises")
-    .select("id, name, position, is_active")
     .eq("user_id", userId)
     .eq("is_active", true);
-  assertResult(error);
+  assertResult(workoutCountError);
+  if (count) return;
 
-  const activeRows = rows ?? [];
-  const canonicalDefaults = new Set(
-    defaultRoutine.map((exercise) => normalizedExerciseName(exercise.name)),
-  );
-  const retiredDefaults = new Set(
-    retiredDefaultExerciseNames.map((name) => normalizedExerciseName(name)),
-  );
-  let changed = 0;
-
-  for (const row of activeRows) {
-    const canonicalName = canonicalDefaultName(row.name);
-    const defaultExercise = defaultExerciseForName(canonicalName);
-
-    if (
-      defaultExercise &&
-      normalizedExerciseName(row.name) !== normalizedExerciseName(defaultExercise.name)
-    ) {
-      const { error: updateError } = await supabase
-        .from("exercises")
-        .update({
-          name: defaultExercise.name,
-          type: defaultExercise.type,
-          default_weight: defaultExercise.defaultWeight ?? null,
-          default_sets: defaultExercise.defaultSets ?? 3,
-          is_superset: defaultExercise.type === "superset",
-        })
-        .eq("id", row.id);
-      if (updateError?.code !== "23505") assertResult(updateError);
-      changed += updateError ? 0 : 1;
-    }
-
-    if (
-      retiredDefaults.has(normalizedExerciseName(row.name)) &&
-      !canonicalDefaults.has(normalizedExerciseName(canonicalName))
-    ) {
-      const { error: deactivateError } = await supabase
-        .from("exercises")
-        .update({ is_active: false })
-        .eq("id", row.id);
-      assertResult(deactivateError);
-      changed += 1;
-    }
-  }
-
-  const { data: refreshed, error: refreshError } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .from("exercises")
     .select("id, name, position")
     .eq("user_id", userId)
     .eq("is_active", true);
-  assertResult(refreshError);
+  assertResult(existingError);
 
-  const rowsByCanonicalName = new Map();
-  const customRows = [];
-
-  for (const row of refreshed ?? []) {
-    const canonicalName = canonicalDefaultName(row.name);
-    if (canonicalDefaults.has(normalizedExerciseName(canonicalName))) {
-      rowsByCanonicalName.set(normalizedExerciseName(canonicalName), row);
-    } else {
-      customRows.push(row);
-    }
-  }
-
-  const orderedRows = [
-    ...defaultRoutine
-      .map((exercise) => rowsByCanonicalName.get(normalizedExerciseName(exercise.name)))
-      .filter(Boolean),
-    ...customRows.sort((a, b) => a.position - b.position),
-  ];
-
-  const needsReorder = orderedRows.some((row, index) => row.position !== index + 1);
-  if (!needsReorder) return changed;
-
-  for (const [index, row] of orderedRows.entries()) {
-    const temporaryPosition = 1000 + index;
-    if (row.position === temporaryPosition) continue;
-    const { error: updateError } = await supabase
-      .from("exercises")
-      .update({ position: temporaryPosition })
-      .eq("id", row.id);
-    assertResult(updateError);
-  }
-
-  for (const [index, row] of orderedRows.entries()) {
-    const position = index + 1;
-    const { error: updateError } = await supabase
-      .from("exercises")
-      .update({ position })
-      .eq("id", row.id);
-    assertResult(updateError);
-    if (row.position !== position) changed += 1;
-  }
-
-  return changed;
-}
-
-export async function reconcileAliasedExercises(userId) {
-  const { data: exercises, error } = await supabase
-    .from("exercises")
-    .select("id, name, position, created_at")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .order("created_at");
-  assertResult(error);
-
-  const groups = new Map();
-  for (const exercise of exercises ?? []) {
-    const canonicalName = canonicalDefaultName(exercise.name);
-    if (normalizedExerciseName(canonicalName) === normalizedExerciseName(exercise.name)) continue;
-    const key = normalizedExerciseName(canonicalName);
-    groups.set(key, [...(groups.get(key) ?? []), exercise]);
-  }
-
-  // Include already-canonical rows in alias groups so old and new names converge.
-  for (const exercise of exercises ?? []) {
-    const key = normalizedExerciseName(canonicalDefaultName(exercise.name));
-    if (!groups.has(key)) continue;
-    const group = groups.get(key);
-    if (!group.some((row) => row.id === exercise.id)) group.push(exercise);
-  }
-
-  let reconciled = 0;
-  for (const [canonicalKey, group] of groups) {
-    const canonical = defaultRoutine.find(
-      (exercise) => normalizedExerciseName(exercise.name) === canonicalKey,
-    );
-    if (!canonical || !group.length) continue;
-
-    const ids = group.map((exercise) => exercise.id);
-    const { data: logs, error: logsError } = await supabase
-      .from("exercise_logs")
-      .select("id, exercise_id")
-      .eq("user_id", userId)
-      .in("exercise_id", ids);
-    assertResult(logsError);
-
-    const logCounts = (logs ?? []).reduce((counts, log) => {
-      counts[log.exercise_id] = (counts[log.exercise_id] ?? 0) + 1;
-      return counts;
-    }, {});
-    const survivor = [...group].sort((a, b) => (
-      (logCounts[b.id] ?? 0) - (logCounts[a.id] ?? 0)
-      || new Date(a.created_at) - new Date(b.created_at)
-    ))[0];
-    const duplicateIds = ids.filter((id) => id !== survivor.id);
-
-    if (duplicateIds.length) {
-      const { error: moveLogsError } = await supabase
-        .from("exercise_logs")
-        .update({ exercise_id: survivor.id })
-        .in("exercise_id", duplicateIds)
-        .eq("user_id", userId);
-      assertResult(moveLogsError);
-
-      const { error: deactivateError } = await supabase
-        .from("exercises")
-        .update({ is_active: false })
-        .in("id", duplicateIds);
-      assertResult(deactivateError);
-    }
-
-    const { error: updateError } = await supabase
-      .from("exercises")
-      .update({
-        name: canonical.name,
-        type: canonical.type,
-        default_weight: canonical.defaultWeight ?? null,
-        default_sets: canonical.defaultSets ?? 3,
-        is_superset: canonical.type === "superset",
-      })
-      .eq("id", survivor.id);
-    assertResult(updateError);
-    reconciled += duplicateIds.length || survivor.name !== canonical.name ? 1 : 0;
-  }
-
-  return reconciled;
-}
-
-export async function deactivateDuplicateExercises(userId) {
-  const { data: rows, error } = await supabase
-    .from("exercises")
-    .select("id, name, created_at")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .order("created_at");
-  assertResult(error);
-
-  const seenNames = new Set();
-  const duplicateIds = [];
-  const defaultNames = new Set(
-    defaultRoutine.map((exercise) => normalizedExerciseName(exercise.name)),
+  const exerciseByName = new Map(
+    (existing ?? []).map((exercise) => [normalizedExerciseName(exercise.name), exercise]),
   );
+  let nextCatalogPosition = (existing ?? []).reduce(
+    (highest, exercise) => Math.max(highest, exercise.position),
+    0,
+  ) + 1;
 
-  for (const row of rows ?? []) {
-    const normalizedName = normalizedExerciseName(canonicalDefaultName(row.name));
-    if (!defaultNames.has(normalizedName)) continue;
-    if (seenNames.has(normalizedName)) {
-      duplicateIds.push(row.id);
-    } else {
-      seenNames.add(normalizedName);
+  for (const definition of defaultRoutine) {
+    const key = definition.name.toLocaleLowerCase();
+    const match = exerciseByName.get(key);
+    if (match) {
+      exerciseByName.set(key, match);
+      continue;
     }
+    const { data: inserted, error } = await supabase
+      .from("exercises")
+      .insert({
+        user_id: userId,
+        name: definition.name,
+        type: definition.type,
+        position: nextCatalogPosition++,
+        default_weight: null,
+        default_sets: 1,
+        is_superset: false,
+      })
+      .select()
+      .single();
+    assertResult(error);
+    exerciseByName.set(key, inserted);
   }
 
-  if (!duplicateIds.length) return 0;
+  const { data: workouts, error: workoutsError } = await supabase
+    .from("routine_workouts")
+    .insert(defaultWorkoutSchedule.map((workout) => ({
+      user_id: userId,
+      name: workout.name,
+      weekday: workout.weekday,
+    })))
+    .select();
+  assertResult(workoutsError);
 
-  const { error: updateError } = await supabase
-    .from("exercises")
-    .update({ is_active: false })
-    .in("id", duplicateIds);
-  assertResult(updateError);
-  return duplicateIds.length;
+  const links = workouts.flatMap((workout) => {
+    const definition = defaultWorkoutSchedule.find((item) => item.weekday === workout.weekday);
+    return definition.exercises.map((name, index) => ({
+      workout_id: workout.id,
+      exercise_id: exerciseByName.get(name.toLocaleLowerCase()).id,
+      position: index + 1,
+    }));
+  });
+  const { error: linksError } = await supabase.from("routine_workout_exercises").insert(links);
+  assertResult(linksError);
 }
 
-export async function deactivateLegacyLateralRaiseSuperset(userId) {
-  const { data: rows, error } = await supabase
-    .from("exercises")
-    .select("id, name")
-    .eq("user_id", userId)
-    .eq("is_active", true);
-  assertResult(error);
-
-  const legacyIds = (rows ?? [])
-    .filter((row) => row.name.trim().toLocaleLowerCase() === "lateral raise superset")
-    .map((row) => row.id);
-
-  if (!legacyIds.length) return 0;
-
-  const { error: updateError } = await supabase
-    .from("exercises")
-    .update({ is_active: false })
-    .in("id", legacyIds);
-  assertResult(updateError);
-  return legacyIds.length;
+export function ensureDefaultWeeklyRoutine(userId) {
+  if (!seedRequests.has(userId)) {
+    seedRequests.set(
+      userId,
+      seedWeeklyRoutine(userId).finally(() => seedRequests.delete(userId)),
+    );
+  }
+  return seedRequests.get(userId);
 }
 
-export async function getExercisesWithPartsAndRecentLogs(userId) {
-  const { data: exercises, error } = await supabase
+export async function getExercisesWithPartsAndRecentLogs(userId, exerciseIds = null) {
+  let exerciseQuery = supabase
     .from("exercises")
     .select("*, exercise_parts(*)")
     .eq("user_id", userId)
-    .eq("is_active", true)
     .order("position")
     .order("position", { referencedTable: "exercise_parts" });
+  if (exerciseIds) {
+    exerciseQuery = exerciseQuery.in("id", exerciseIds);
+  } else {
+    exerciseQuery = exerciseQuery.eq("is_active", true);
+  }
+  const { data: exercises, error } = await exerciseQuery;
   assertResult(error);
 
   if (!exercises?.length) return [];
 
-  const exerciseIds = exercises.map((exercise) => exercise.id);
+  const loadedExerciseIds = exercises.map((exercise) => exercise.id);
   const { data: logs, error: logsError } = await supabase
     .from("exercise_logs")
     .select("*, exercise_log_sets(*)")
     .eq("user_id", userId)
-    .in("exercise_id", exerciseIds)
+    .in("exercise_id", loadedExerciseIds)
     .order("performed_at", { ascending: false })
-    .limit(Math.max(45, exerciseIds.length * 5));
+    .limit(Math.max(45, loadedExerciseIds.length * 5));
   assertResult(logsError);
 
   const logsByExercise = {};
@@ -421,21 +161,54 @@ function sortLogSets(log) {
 }
 
 export async function getDailyWorkoutDashboard(userId, selectedDate) {
-  const exercises = await getExercisesWithPartsAndRecentLogs(userId);
-  if (!exercises.length) return [];
-
+  const weekday = new Date(`${selectedDate}T12:00:00`).getDay();
   const { start, end } = dayRangeFromDate(selectedDate);
-  const exerciseIds = exercises.map((exercise) => exercise.id);
+  const { data: workout, error: workoutError } = await supabase
+    .from("routine_workouts")
+    .select("id, name, weekday")
+    .eq("user_id", userId)
+    .eq("weekday", weekday)
+    .eq("is_active", true)
+    .maybeSingle();
+  assertResult(workoutError);
+
+  let links = [];
+  if (workout) {
+    const { data, error: linksError } = await supabase
+      .from("routine_workout_exercises")
+      .select("exercise_id, position")
+      .eq("workout_id", workout.id)
+      .order("position");
+    assertResult(linksError);
+    links = data ?? [];
+  }
+
   const { data: dailyLogs, error } = await supabase
     .from("exercise_logs")
     .select("*, exercise_log_sets(*)")
     .eq("user_id", userId)
-    .in("exercise_id", exerciseIds)
     .gte("performed_at", start)
     .lt("performed_at", end)
     .order("performed_at", { ascending: false });
   assertResult(error);
 
+  const scheduledIds = new Set(links.map((link) => link.exercise_id));
+  const historicalIds = (dailyLogs ?? [])
+    .map((log) => log.exercise_id)
+    .filter((id, index, ids) => !scheduledIds.has(id) && ids.indexOf(id) === index);
+  const displayLinks = [
+    ...links.map((link) => ({ ...link, in_workout: true })),
+    ...historicalIds.map((exerciseId, index) => ({
+      exercise_id: exerciseId,
+      position: links.length + index + 1,
+      in_workout: false,
+    })),
+  ];
+  const exerciseIds = displayLinks.map((link) => link.exercise_id);
+  if (!exerciseIds.length) return { workout, exercises: [] };
+
+  const exercises = await getExercisesWithPartsAndRecentLogs(userId, exerciseIds);
+  const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]));
   const dailyLogByExercise = {};
   for (const log of dailyLogs ?? []) {
     if (dailyLogByExercise[log.exercise_id]) continue;
@@ -443,22 +216,62 @@ export async function getDailyWorkoutDashboard(userId, selectedDate) {
     dailyLogByExercise[log.exercise_id] = log;
   }
 
-  return exercises.map((exercise) => ({
-    ...exercise,
-    selected_log: dailyLogByExercise[exercise.id] ?? null,
-  }));
+  return {
+    workout: workout ?? {
+      id: null,
+      name: "Logged Workout",
+      weekday,
+      historical: true,
+    },
+    exercises: displayLinks
+      .map((link) => {
+        const exercise = exerciseById.get(link.exercise_id);
+        return exercise
+          ? {
+              ...exercise,
+              position: link.position,
+              workout_id: workout?.id ?? null,
+              in_workout: link.in_workout,
+              selected_log: dailyLogByExercise[exercise.id] ?? null,
+            }
+          : null;
+      })
+      .filter(Boolean),
+  };
 }
 
-export async function createExercise(userId, values, position) {
+export async function createExercise(userId, workoutId, values, position) {
+  const { data: catalogExercises, error: catalogError } = await supabase
+    .from("exercises")
+    .select("id, name, position")
+    .eq("user_id", userId)
+    .eq("is_active", true)
+    .order("position", { ascending: false });
+  assertResult(catalogError);
+
+  const existing = (catalogExercises ?? []).find(
+    (exercise) => exercise.name.trim().toLocaleLowerCase()
+      === values.name.trim().toLocaleLowerCase(),
+  );
+  if (existing) {
+    const { error: linkError } = await supabase.from("routine_workout_exercises").insert({
+      workout_id: workoutId,
+      exercise_id: existing.id,
+      position,
+    });
+    assertResult(linkError);
+    return existing;
+  }
+
   const { data, error } = await supabase
     .from("exercises")
     .insert({
       user_id: userId,
       name: values.name.trim(),
       type: values.type,
-      position,
-      default_weight: values.defaultWeight || null,
-      default_sets: values.type === "cardio" ? 1 : Number(values.defaultSets) || 1,
+      position: (catalogExercises?.[0]?.position ?? 0) + 1,
+      default_weight: null,
+      default_sets: 1,
       is_superset: values.type === "superset",
     })
     .select()
@@ -483,6 +296,13 @@ export async function createExercise(userId, values, position) {
     );
     assertResult(partsError);
   }
+
+  const { error: linkError } = await supabase.from("routine_workout_exercises").insert({
+    workout_id: workoutId,
+    exercise_id: data.id,
+    position,
+  });
+  assertResult(linkError);
   return data;
 }
 
@@ -492,8 +312,8 @@ export async function updateExercise(exerciseId, values) {
     .update({
       name: values.name.trim(),
       type: values.type,
-      default_weight: values.defaultWeight || null,
-      default_sets: values.type === "cardio" ? 1 : Number(values.defaultSets) || 1,
+      default_weight: null,
+      default_sets: 1,
       is_superset: values.type === "superset",
     })
     .eq("id", exerciseId);
@@ -538,17 +358,20 @@ export async function updateExercise(exerciseId, values) {
   }
 }
 
-export async function moveExerciseTo(userId, exerciseId, targetExerciseId) {
+export async function moveExerciseTo(workoutId, exerciseId, targetExerciseId) {
   const { data: exercises, error } = await supabase
-    .from("exercises")
-    .select("id, position")
-    .eq("user_id", userId)
-    .eq("is_active", true)
+    .from("routine_workout_exercises")
+    .select("exercise_id, position")
+    .eq("workout_id", workoutId)
     .order("position");
   assertResult(error);
 
-  const currentIndex = (exercises ?? []).findIndex((exercise) => exercise.id === exerciseId);
-  const targetIndex = (exercises ?? []).findIndex((exercise) => exercise.id === targetExerciseId);
+  const currentIndex = (exercises ?? []).findIndex(
+    (exercise) => exercise.exercise_id === exerciseId,
+  );
+  const targetIndex = (exercises ?? []).findIndex(
+    (exercise) => exercise.exercise_id === targetExerciseId,
+  );
   if (currentIndex < 0 || targetIndex < 0 || targetIndex >= exercises.length) return false;
   if (currentIndex === targetIndex) return false;
 
@@ -557,9 +380,10 @@ export async function moveExerciseTo(userId, exerciseId, targetExerciseId) {
   const temporaryPosition = Math.max(...exercises.map((exercise) => exercise.position)) + 1000;
 
   const { error: parkError } = await supabase
-    .from("exercises")
+    .from("routine_workout_exercises")
     .update({ position: temporaryPosition })
-    .eq("id", current.id);
+    .eq("workout_id", workoutId)
+    .eq("exercise_id", current.exercise_id);
   assertResult(parkError);
 
   const shifted = currentIndex < targetIndex
@@ -569,26 +393,29 @@ export async function moveExerciseTo(userId, exerciseId, targetExerciseId) {
   for (const exercise of shifted) {
     const position = exercise.position + (currentIndex < targetIndex ? -1 : 1);
     const { error: shiftError } = await supabase
-      .from("exercises")
+      .from("routine_workout_exercises")
       .update({ position })
-      .eq("id", exercise.id);
+      .eq("workout_id", workoutId)
+      .eq("exercise_id", exercise.exercise_id);
     assertResult(shiftError);
   }
 
   const { error: currentError } = await supabase
-    .from("exercises")
+    .from("routine_workout_exercises")
     .update({ position: targetPosition })
-    .eq("id", current.id);
+    .eq("workout_id", workoutId)
+    .eq("exercise_id", current.exercise_id);
   assertResult(currentError);
 
   return true;
 }
 
-export async function deactivateExercise(exerciseId) {
+export async function removeExerciseFromWorkout(workoutId, exerciseId) {
   const { error } = await supabase
-    .from("exercises")
-    .update({ is_active: false })
-    .eq("id", exerciseId);
+    .from("routine_workout_exercises")
+    .delete()
+    .eq("workout_id", workoutId)
+    .eq("exercise_id", exerciseId);
   assertResult(error);
 }
 

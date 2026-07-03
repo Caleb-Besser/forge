@@ -3,7 +3,7 @@
 Forge is an offline-friendly daily workout journal built with React, Vite, and
 Supabase. It supports weighted, bodyweight, timed, cardio, mobility, and
 superset exercises, along with recent-history trends, timers, workout feelings,
-and local queueing when the network is unavailable.
+weekday-assigned workouts, and local queueing when the network is unavailable.
 
 ## Local setup
 
@@ -18,6 +18,20 @@ and local queueing when the network is unavailable.
 3. Apply every SQL file in `supabase/migrations` to the Supabase project in
    filename order.
 4. Start Forge with `npm run dev`.
+
+## Upgrade an existing Supabase project
+
+Apply `supabase/migrations/202607030001_weekday_workouts.sql` after the earlier
+migrations. With the Supabase CLI linked to the project:
+
+```sh
+npx supabase db push
+```
+
+Alternatively, paste that migration into the Supabase SQL Editor and run it as
+one script. It preserves exercise logs, merges known legacy aliases onto the
+exercise record with the most history, and creates the Monday, Wednesday, and
+Friday workout assignments.
 
 ## Quality checks
 
@@ -43,6 +57,8 @@ npm run build
 - `src/lib/localWorkoutSync.js` owns the local persistence queue and sync retry
   behavior.
 - `src/lib/workoutApi.js` is the Supabase data-access layer.
+- `src/lib/seedRoutine.js` defines the default weekly workout and bootstraps
+  brand-new accounts.
 - `supabase/migrations` is the ordered database schema history.
 
 Workout feelings are stored on `exercise_logs`. Pending logs remain local until

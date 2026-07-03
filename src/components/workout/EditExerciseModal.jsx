@@ -13,8 +13,6 @@ export default function EditExerciseModal({
     return {
       name: exercise.name,
       type: exercise.type,
-      defaultWeight: exercise.default_weight ?? "",
-      defaultSets: exercise.default_sets,
       partA: exercise.exercise_parts[0]?.name ?? "",
       partB: exercise.exercise_parts[1]?.name ?? "",
       parts: exercise.exercise_parts.map((part) => part.name),
@@ -37,7 +35,9 @@ export default function EditExerciseModal({
         <h2>Edit Exercise</h2>
         <ExerciseFormFields values={values} onChange={setValues} />
         <div className="modal-actions split">
-          <button className="arcade-button danger" type="button" onClick={onRemove}>Remove</button>
+          {onRemove && (
+            <button className="arcade-button danger" type="button" onClick={onRemove}>Remove</button>
+          )}
           <button className="arcade-button secondary" type="button" onClick={onClose}>Cancel</button>
           <button className="arcade-button primary" type="submit" disabled={busy}>Save</button>
         </div>

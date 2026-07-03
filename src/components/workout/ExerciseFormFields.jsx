@@ -22,18 +22,6 @@ export default function ExerciseFormFields({ values, onChange }) {
           ))}
         </select>
       </label>
-      {values.type !== "cardio" && (
-        <label>
-          <span>Default sets</span>
-          <input
-            min="1"
-            max="10"
-            type="number"
-            value={values.defaultSets}
-            onChange={(event) => update("defaultSets", event.target.value)}
-          />
-        </label>
-      )}
       {values.type === "superset" && (
         <div className="paired-fields">
           <label>

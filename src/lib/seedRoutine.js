@@ -1,20 +1,63 @@
-export const defaultRoutine = [
-  { name: "Cable Rows", type: "weighted", defaultWeight: 50 },
-  { name: "Low Incline Dumbbell Press", type: "weighted", defaultWeight: 25 },
-  { name: "Goblet Squats", type: "weighted", defaultWeight: 35 },
-  { name: "Dumbbell Romanian Deadlifts", type: "weighted", defaultWeight: 35 },
-  { name: "Incline Dumbbell Curls", type: "weighted", defaultWeight: 15 },
-  { name: "Dumbbell Calf Raises", type: "weighted", defaultWeight: 35 },
-  { name: "Lateral Raises", type: "weighted", defaultWeight: 10 },
-  { name: "Rear-Delt Raises", type: "weighted", defaultWeight: 10 },
-  { name: "Bench Dips", type: "bodyweight" },
-  { name: "Hanging L-Raises", type: "bodyweight" },
-  { name: "Planks", type: "timed" },
+export const defaultWorkoutSchedule = [
   {
-    name: "Running / Walking",
-    type: "cardio",
-    defaultSets: 1,
+    name: "Monday Workout",
+    weekday: 1,
+    exercises: [
+      "Goblet Squats",
+      "Flat Dumbbell Press",
+      "Cable Rows",
+      "Dumbbell RDLs",
+      "Lateral Raises",
+      "Incline Dumbbell Curls",
+      "Hanging L-Raises",
+    ],
   },
+  {
+    name: "Wednesday Workout",
+    weekday: 3,
+    exercises: [
+      "Bulgarian Split Squats",
+      "Low-Incline Dumbbell Press",
+      "Pull-ups / Assisted Pull-ups / Negatives",
+      "Dumbbell Shoulder Press",
+      "Bench Dips",
+      "Rear-Delt Raises",
+      "Planks",
+    ],
+  },
+  {
+    name: "Friday Workout",
+    weekday: 5,
+    exercises: [
+      "Dumbbell RDLs",
+      "Push-ups",
+      "Cable Rows",
+      "Pull-ups / Assisted Pull-ups / Negatives",
+      "Dumbbell Calf Raises",
+      "Incline Dumbbell Curls",
+      "Hanging L-Raises",
+      "Planks",
+    ],
+  },
+];
+
+export const defaultRoutine = [
+  { name: "Goblet Squats", type: "weighted" },
+  { name: "Flat Dumbbell Press", type: "weighted" },
+  { name: "Cable Rows", type: "weighted" },
+  { name: "Dumbbell RDLs", type: "weighted" },
+  { name: "Lateral Raises", type: "weighted" },
+  { name: "Incline Dumbbell Curls", type: "weighted" },
+  { name: "Hanging L-Raises", type: "bodyweight" },
+  { name: "Bulgarian Split Squats", type: "weighted" },
+  { name: "Low-Incline Dumbbell Press", type: "weighted" },
+  { name: "Pull-ups / Assisted Pull-ups / Negatives", type: "bodyweight" },
+  { name: "Dumbbell Shoulder Press", type: "weighted" },
+  { name: "Bench Dips", type: "bodyweight" },
+  { name: "Rear-Delt Raises", type: "weighted" },
+  { name: "Planks", type: "timed" },
+  { name: "Push-ups", type: "bodyweight" },
+  { name: "Dumbbell Calf Raises", type: "weighted" },
 ];
 
 export const defaultRoutineAliases = {
@@ -22,24 +65,24 @@ export const defaultRoutineAliases = {
   "rear-delt raise": "Rear-Delt Raises",
   "rear delt raise": "Rear-Delt Raises",
   "incline dumbbell curl": "Incline Dumbbell Curls",
-  "incline dumbbell curls": "Incline Dumbbell Curls",
-  "low incline dumbell press": "Low Incline Dumbbell Press",
-  "dumbell romanian deadlifts": "Dumbbell Romanian Deadlifts",
+  "low incline dumbbell press": "Low-Incline Dumbbell Press",
+  "low incline dumbell press": "Low-Incline Dumbbell Press",
+  "dumbbell romanian deadlifts": "Dumbbell RDLs",
+  "dumbell romanian deadlifts": "Dumbbell RDLs",
   "dumbbell calf raise": "Dumbbell Calf Raises",
   "dumbell calf raises": "Dumbbell Calf Raises",
   "l raises": "Hanging L-Raises",
   "l-raises": "Hanging L-Raises",
   "hanging l raises": "Hanging L-Raises",
-  "hanging l-raises": "Hanging L-Raises",
+  "pull-ups": "Pull-ups / Assisted Pull-ups / Negatives",
+  "pull ups": "Pull-ups / Assisted Pull-ups / Negatives",
+  "push ups": "Push-ups",
 };
 
-export const retiredDefaultExerciseNames = [
-  "Inverted Rows",
-  "Curl + Extension Superset",
-  "Mobility",
-  "Overhead Triceps Extension",
-  "Dumbbell Step Ups",
-];
+export function canonicalExerciseName(name) {
+  const trimmed = name.trim();
+  return defaultRoutineAliases[trimmed.toLocaleLowerCase()] ?? trimmed;
+}
 
 export function trackingTypeFor(exerciseType) {
   if (exerciseType === "mobility") return "completed";

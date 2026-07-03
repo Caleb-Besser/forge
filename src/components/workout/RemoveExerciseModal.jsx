@@ -7,7 +7,7 @@ export default function RemoveExerciseModal({ exercise, onClose, onConfirm, busy
         <div className="confirm-symbol">?</div>
         <h2>Remove Exercise?</h2>
         <p>
-          Remove <strong>{exercise.name}</strong> from the wheel? Existing logs will be preserved.
+          Remove <strong>{exercise.name}</strong> from this workout? Existing logs will be preserved.
         </p>
         <div className="modal-actions">
           <button className="arcade-button secondary" type="button" onClick={onClose}>Cancel</button>
@@ -19,4 +19,3 @@ export default function RemoveExerciseModal({ exercise, onClose, onConfirm, busy
     </div>
   );
 }
-

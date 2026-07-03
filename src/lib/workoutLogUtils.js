@@ -51,8 +51,13 @@ export function exerciseIconLabel(exercise) {
 export function exerciseIconAsset(exercise) {
   const name = exercise.name.toLocaleLowerCase();
 
+  if (name.includes("flat dumbbell press")) return "/exercise-icons/flat-dumbbell-press.png";
+  if (name.includes("bulgarian")) return "/exercise-icons/bulgarian-split-squats.png";
+  if (name.includes("shoulder press")) return "/exercise-icons/dumbbell-shoulder-press.png";
+  if (name.includes("pull-up") || name.includes("pull up")) return "/exercise-icons/pull-ups.png";
+  if (name.includes("push-up") || name.includes("push up")) return "/exercise-icons/push-ups.png";
   if (name.includes("lateral raise")) return "/exercise-icons/lateral-raise.webp";
-  if (name.includes("low incline") || name.includes("press")) {
+  if (name.includes("low incline") || name.includes("low-incline")) {
     return "/exercise-icons/low-incline-dumbbell-press.webp";
   }
   if (name.includes("bench dip") || name.includes("dip")) {

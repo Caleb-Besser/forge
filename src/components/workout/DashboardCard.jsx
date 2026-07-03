@@ -11,6 +11,7 @@ export default function DashboardCard({
   onDragEnter,
   onDragEnd,
   onGripPointerDown,
+  reorderable = true,
 }) {
   const completed = Boolean(exercise.selected_log);
   const lastLog = exercise.recent_logs.find((log) => log.id !== exercise.selected_log?.id)
@@ -53,28 +54,30 @@ export default function DashboardCard({
       <span className="daily-card-action" aria-hidden="true">
         {completed ? "✓" : "›"}
       </span>
-      <span
-        className="exercise-drag-handle"
-        role="button"
-        tabIndex="0"
-        draggable
-        aria-label={`Drag to reorder ${exercise.name}`}
-        title="Drag to reorder"
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => event.stopPropagation()}
-        onDragStart={(event) => {
-          event.stopPropagation();
-          event.dataTransfer.effectAllowed = "move";
-          onDragStart(exercise.id);
-        }}
-        onDragEnd={() => onDragEnd()}
-        onPointerDown={(event) => {
-          event.stopPropagation();
-          onGripPointerDown(event, exercise.id);
-        }}
-      >
-        <i /><i /><i /><i /><i /><i />
-      </span>
+      {reorderable && (
+        <span
+          className="exercise-drag-handle"
+          role="button"
+          tabIndex="0"
+          draggable
+          aria-label={`Drag to reorder ${exercise.name}`}
+          title="Drag to reorder"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+          onDragStart={(event) => {
+            event.stopPropagation();
+            event.dataTransfer.effectAllowed = "move";
+            onDragStart(exercise.id);
+          }}
+          onDragEnd={() => onDragEnd()}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            onGripPointerDown(event, exercise.id);
+          }}
+        >
+          <i /><i /><i /><i /><i /><i />
+        </span>
+      )}
     </article>
   );
 }

@@ -4,8 +4,6 @@ import ExerciseFormFields from "./ExerciseFormFields";
 const initialValues = {
   name: "",
   type: "weighted",
-  defaultWeight: "",
-  defaultSets: 1,
   partA: "",
   partB: "",
   parts: ["Wall Angels", "Lat Stretch on Table", "Leg Hugs", "Cobra Stretch"],
