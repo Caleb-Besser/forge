@@ -10,6 +10,7 @@ export const defaultWorkoutSchedule = [
       "Lateral Raises",
       "Incline Dumbbell Curls",
       "Hanging L-Raises",
+      "Planks",
     ],
   },
   {

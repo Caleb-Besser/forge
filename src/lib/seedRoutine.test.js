@@ -10,9 +10,11 @@ test("the default routine is assigned only to Monday, Wednesday, and Friday", ()
     defaultWorkoutSchedule.map((workout) => workout.weekday),
     [1, 3, 5],
   );
-  assert.equal(defaultWorkoutSchedule[0].exercises.length, 7);
+  assert.equal(defaultWorkoutSchedule[0].exercises.length, 8);
   assert.equal(defaultWorkoutSchedule[1].exercises.length, 7);
   assert.equal(defaultWorkoutSchedule[2].exercises.length, 8);
+  assert.ok(defaultWorkoutSchedule[0].exercises.includes("Planks"));
+  assert.ok(defaultWorkoutSchedule[1].exercises.includes("Planks"));
 });
 
 test("legacy exercise names resolve to shared history-owning exercises", () => {
