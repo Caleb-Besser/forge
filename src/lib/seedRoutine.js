@@ -5,12 +5,12 @@ export const defaultWorkoutSchedule = [
     exercises: [
       "Goblet Squats",
       "Flat Dumbbell Press",
-      "Cable Rows",
       "Dumbbell RDLs",
       "Lateral Raises",
       "Incline Dumbbell Curls",
       "Hanging L-Raises",
       "Planks",
+      "Cable Rows",
     ],
   },
   {
@@ -20,10 +20,10 @@ export const defaultWorkoutSchedule = [
       "Bulgarian Split Squats",
       "Low-Incline Dumbbell Press",
       "Pull-ups / Assisted Pull-ups / Negatives",
-      "Dumbbell Shoulder Press",
       "Bench Dips",
       "Rear-Delt Raises",
       "Planks",
+      "Calf-Raise Machine",
     ],
   },
   {
@@ -31,13 +31,13 @@ export const defaultWorkoutSchedule = [
     weekday: 5,
     exercises: [
       "Dumbbell RDLs",
-      "Push-ups",
-      "Cable Rows",
+      "Dumbbell Shoulder Press",
       "Pull-ups / Assisted Pull-ups / Negatives",
-      "Dumbbell Calf Raises",
+      "Push-ups",
       "Incline Dumbbell Curls",
       "Hanging L-Raises",
       "Planks",
+      "Cable Rows",
     ],
   },
 ];
@@ -58,7 +58,7 @@ export const defaultRoutine = [
   { name: "Rear-Delt Raises", type: "weighted" },
   { name: "Planks", type: "timed" },
   { name: "Push-ups", type: "bodyweight" },
-  { name: "Dumbbell Calf Raises", type: "weighted" },
+  { name: "Calf-Raise Machine", type: "weighted" },
 ];
 
 export const defaultRoutineAliases = {
@@ -70,8 +70,8 @@ export const defaultRoutineAliases = {
   "low incline dumbell press": "Low-Incline Dumbbell Press",
   "dumbbell romanian deadlifts": "Dumbbell RDLs",
   "dumbell romanian deadlifts": "Dumbbell RDLs",
-  "dumbbell calf raise": "Dumbbell Calf Raises",
-  "dumbell calf raises": "Dumbbell Calf Raises",
+  "calf raise machine": "Calf-Raise Machine",
+  "calf-raise machine": "Calf-Raise Machine",
   "l raises": "Hanging L-Raises",
   "l-raises": "Hanging L-Raises",
   "hanging l raises": "Hanging L-Raises",
