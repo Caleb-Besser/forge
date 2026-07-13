@@ -14,6 +14,7 @@ import {
   pendingWorkoutCount,
   pendingWorkoutFeeling,
   queueWorkoutLog,
+  removeQueuedWorkoutLog,
   setQueuedWorkoutFeeling,
   subscribeToWorkoutQueue,
 } from "../../lib/localWorkoutSync";
@@ -55,6 +56,21 @@ const breakPresets = [
   { label: "2m", seconds: 120 },
 ];
 const SKIPPED_LOG_NOTE = "Skipped";
+const UNDO_WINDOW_MS = 6000;
+
+function workoutDraftKey(userId, exerciseId, selectedDate) {
+  return `workout-draft:${userId}:${exerciseId}:${selectedDate}`;
+}
+
+function restoredDraft(key, fallback) {
+  if (!key) return fallback;
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 function remainingTimerSeconds(timer, now = Date.now()) {
   if (!timer?.endsAt) return 0;
@@ -377,6 +393,7 @@ function SetRows({
 
 function ExerciseDetail({
   exercise,
+  userId,
   selectedDate,
   onClose,
   onEditExercise,
@@ -385,16 +402,36 @@ function ExerciseDetail({
   onStartBreak,
   breakTimerActive,
   busy,
+  editMode,
 }) {
-  const [draft, setDraft] = useState(
-    () => draftFromLog(exercise, exercise.selected_log),
-  );
+  const draftKey = exercise.selected_log
+    ? null
+    : workoutDraftKey(userId, exercise.id, selectedDate);
+  const [draft, setDraft] = useState(() => restoredDraft(
+    draftKey,
+    draftFromLog(exercise, exercise.selected_log),
+  ));
   const [editingLog, setEditingLog] = useState(exercise.selected_log);
   const [setTimer, setSetTimer] = useState(null);
   const [blockedTimerTarget, setBlockedTimerTarget] = useState("");
   const history = exercise.recent_logs ?? [];
   const insight = useMemo(() => setupInsight(exercise), [exercise]);
   const setTimerActive = Boolean(setTimer);
+  const draftTouched = useRef(false);
+
+  const updateDraft = useCallback((nextDraft) => {
+    draftTouched.current = true;
+    setDraft(nextDraft);
+  }, []);
+
+  useEffect(() => {
+    if (!draftKey || !draftTouched.current) return;
+    try {
+      localStorage.setItem(draftKey, JSON.stringify(draft));
+    } catch {
+      // Saving the workout still works if local draft storage is unavailable.
+    }
+  }, [draft, draftKey]);
 
   useEffect(() => {
     if (!blockedTimerTarget) return undefined;
@@ -420,7 +457,7 @@ function ExerciseDetail({
   function stopSetTimer() {
     if (!setTimer) return;
     const finalSeconds = Math.floor((Date.now() - setTimer.startedAt) / 1000);
-    setDraft((currentDraft) => updateDraftSet(currentDraft, setTimer.index, (row) => ({
+    updateDraft((currentDraft) => updateDraftSet(currentDraft, setTimer.index, (row) => ({
       ...row,
       duration: secondsToClock(finalSeconds),
     })));
@@ -434,7 +471,7 @@ function ExerciseDetail({
 
   function repeatLast() {
     const lastLog = history.find((log) => log.id !== editingLog?.id);
-    if (lastLog) setDraft(draftFromLog(exercise, lastLog));
+    if (lastLog) updateDraft(draftFromLog(exercise, lastLog));
   }
 
   return (
@@ -467,26 +504,29 @@ function ExerciseDetail({
               onBlocked={() => showTimerBlocked("break")}
             />
           )}
-          <button className="soft-button secondary" type="button" onClick={() => onEditExercise(exercise)}>
-            Manage
-          </button>
+          {editMode && (
+            <button className="soft-button secondary" type="button" onClick={() => onEditExercise(exercise)}>
+              Manage
+            </button>
+          )}
         </div>
 
         <form
           className="detail-form"
           onSubmit={async (event) => {
             event.preventDefault();
-            await onSave(
+            const result = await onSave(
               exercise,
               setsFromDraft(exercise, draft),
               editingLog ? logDateValue(editingLog) : selectedDate,
             );
+            if (result?.saved && draftKey) localStorage.removeItem(draftKey);
           }}
         >
           <SetRows
             exercise={exercise}
             draft={draft}
-            setDraft={setDraft}
+            setDraft={updateDraft}
             timer={setTimer}
             setTimer={setSetTimer}
             breakTimerActive={breakTimerActive}
@@ -525,20 +565,22 @@ function ExerciseDetail({
                       )}
                     </div>
                     <span className="history-chip-trend" aria-label={trend.label}>{trend.symbol}</span>
-                    <div className="history-actions">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingLog(log);
-                          setDraft(draftFromLog(exercise, log));
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button type="button" onClick={() => onDeleteHistory(log)}>
-                        Delete
-                      </button>
-                    </div>
+                    {editMode && (
+                      <div className="history-actions">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingLog(log);
+                            updateDraft(draftFromLog(exercise, log));
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button type="button" onClick={() => onDeleteHistory(log)}>
+                          Delete
+                        </button>
+                      </div>
+                    )}
                   </article>
                 );
               })}
@@ -568,6 +610,7 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
   const [breakTimer, setBreakTimer] = useState(null);
   const [timerNow, setTimerNow] = useState(() => Date.now());
   const [celebrating, setCelebrating] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("workout-theme") || "light");
   const [pendingSyncCount, setPendingSyncCount] = useState(() => pendingWorkoutCount(user.id));
   const [pendingFeeling, setPendingFeeling] = useState(
@@ -891,6 +934,24 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
           <div className="header-action-menu">
             <button
               type="button"
+              aria-pressed={editMode}
+              onClick={() => {
+                setEditMode((current) => {
+                  if (current) {
+                    setAddOpen(false);
+                    setEditing(null);
+                    setRemoving(null);
+                    setDraggingId(null);
+                    setDragOverId(null);
+                  }
+                  return !current;
+                });
+              }}
+            >
+              {editMode ? "Done editing" : "Edit routine"}
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 setTheme((current) => current === "light" ? "dark" : "light");
               }}
@@ -917,7 +978,7 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
         <button className="today-pill" type="button" onClick={() => setSelectedDate(localDateValue())}>
           Today
         </button>
-        {workout?.id && (
+        {workout?.id && editMode && (
           <button className="soft-button primary add-exercise-button" type="button" onClick={() => setAddOpen(true)}>
             + Add Exercise
           </button>
@@ -981,7 +1042,7 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
               onDragEnter={setDragOverId}
                 onDragEnd={finishReorder}
                 onGripPointerDown={startPointerReorder}
-                reorderable={exercise.in_workout}
+                reorderable={editMode && exercise.in_workout}
             />
           ))}
         </section>
@@ -989,8 +1050,14 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
       ) : workout ? (
         <section className="empty-routine">
           <h2>{workout.name} is empty</h2>
-          <p>Add an exercise when you are ready to adjust this routine.</p>
-          <button className="soft-button primary" type="button" onClick={() => setAddOpen(true)}>Add Exercise</button>
+          <p>
+            {editMode
+              ? "Add an exercise when you are ready to adjust this routine."
+              : "Use Edit routine in the menu when you want to add an exercise."}
+          </p>
+          {editMode && (
+            <button className="soft-button primary" type="button" onClick={() => setAddOpen(true)}>Add Exercise</button>
+          )}
         </section>
       ) : (
         <section className="empty-routine rest-day">
@@ -1003,8 +1070,10 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
         <ExerciseDetail
           key={`${selectedExercise.id}-${selectedExercise.selected_log?.id ?? "new"}`}
           exercise={selectedExercise}
+          userId={user.id}
           selectedDate={selectedDate}
           busy={busy}
+          editMode={editMode}
           breakTimerActive={Boolean(displayedBreakTimer)}
           onClose={() => setSelectedExercise(null)}
           onEditExercise={(exercise) => setEditing(exercise)}
@@ -1014,7 +1083,7 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
             await perform(() => deleteExerciseLog(log.id), "History entry deleted.");
           }}
           onSave={async (exercise, sets, logDate) => {
-            commitExerciseLog(
+            return commitExerciseLog(
               exercise,
               sets,
               logDate,
@@ -1032,7 +1101,13 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
             ?? "Workout"
           }
           onChoose={(feeling) => {
-            setQueuedWorkoutFeeling(user.id, pendingFeeling.id, feeling);
+            const queueItemId = pendingFeeling.id;
+            setQueuedWorkoutFeeling(
+              user.id,
+              queueItemId,
+              feeling,
+              { syncDelayMs: UNDO_WINDOW_MS },
+            );
             setExercises((current) => current.map((exercise) => (
               exercise.id === pendingFeeling.exerciseId && exercise.selected_log
                 ? {
@@ -1049,9 +1124,21 @@ export default function WorkoutLogPage({ user, onSignOut, showToast }) {
             setPendingFeeling(null);
             setSelectedExercise(null);
             showToast(
-              navigator.onLine
-                ? "Saved locally. Syncing…"
-                : "Saved locally. We’ll sync when you’re online.",
+              "Workout saved.",
+              "success",
+              {
+                actionLabel: "Undo",
+                onAction: () => {
+                  const removed = removeQueuedWorkoutLog(user.id, queueItemId);
+                  if (!removed) return;
+                  setCelebrating(false);
+                  loadRoutine().catch((error) => {
+                    console.error(error);
+                    showToast("Save was undone, but the workout could not refresh.", "error");
+                  });
+                  showToast("Save undone.");
+                },
+              },
             );
             if (completesDay) setCelebrating(true);
             flushPendingWorkoutLogs(user.id).then((synced) => {

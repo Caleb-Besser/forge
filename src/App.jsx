@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import LoginScreen from "./components/LoginScreen";
 import ToastNotification from "./components/ToastNotification";
@@ -9,11 +9,23 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(null);
+  const notificationTimer = useRef(null);
 
-  const showToast = useCallback((message, type = "success") => {
-    setNotification({ message, type });
-    window.setTimeout(() => setNotification(null), 5000);
+  const showToast = useCallback((message, type = "success", options = {}) => {
+    window.clearTimeout(notificationTimer.current);
+    setNotification({
+      message,
+      type,
+      actionLabel: options.actionLabel,
+      onAction: options.onAction,
+    });
+    notificationTimer.current = window.setTimeout(
+      () => setNotification(null),
+      options.duration ?? 5000,
+    );
   }, []);
+
+  useEffect(() => () => window.clearTimeout(notificationTimer.current), []);
 
   useEffect(() => {
     let active = true;
@@ -44,7 +56,13 @@ export default function App() {
 
   return (
     <>
-      <ToastNotification notification={notification} />
+      <ToastNotification
+        notification={notification}
+        onDismiss={() => {
+          window.clearTimeout(notificationTimer.current);
+          setNotification(null);
+        }}
+      />
       {session ? (
         <WorkoutLogPage
           user={session.user}

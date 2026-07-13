@@ -2,6 +2,7 @@ import { saveExerciseLogWithSets } from "./workoutApi";
 
 const queueEvent = "workout-sync-queue-change";
 let activeFlush = null;
+let scheduledFlush = null;
 
 function storageKey(userId) {
   return `workout-log-queue:${userId}`;
@@ -73,7 +74,12 @@ export function queueWorkoutLog(
   return item;
 }
 
-export function setQueuedWorkoutFeeling(userId, queueItemId, feeling) {
+export function setQueuedWorkoutFeeling(
+  userId,
+  queueItemId,
+  feeling,
+  { syncDelayMs = 0 } = {},
+) {
   const queue = readQueue(userId);
   const itemIndex = queue.findIndex((item) => item.id === queueItemId);
   if (itemIndex < 0) return null;
@@ -82,9 +88,30 @@ export function setQueuedWorkoutFeeling(userId, queueItemId, feeling) {
     ...queue[itemIndex],
     feeling,
     awaitingFeeling: false,
+    syncAfter: syncDelayMs > 0 ? Date.now() + syncDelayMs : null,
   };
   writeQueue(userId, queue);
   return queue[itemIndex];
+}
+
+export function removeQueuedWorkoutLog(userId, queueItemId) {
+  const queue = readQueue(userId);
+  const item = queue.find((entry) => entry.id === queueItemId);
+  if (!item) return null;
+  writeQueue(userId, queue.filter((entry) => entry.id !== queueItemId));
+  return item;
+}
+
+function scheduleEligibleFlush(userId) {
+  window.clearTimeout(scheduledFlush);
+  const nextSyncAt = readQueue(userId)
+    .filter((item) => !item.awaitingFeeling && item.syncAfter > Date.now())
+    .reduce((soonest, item) => Math.min(soonest, item.syncAfter), Infinity);
+  if (!Number.isFinite(nextSyncAt)) return;
+  scheduledFlush = window.setTimeout(
+    () => flushPendingWorkoutLogs(userId),
+    Math.max(0, nextSyncAt - Date.now()),
+  );
 }
 
 export function mergePendingWorkoutLogs(rows, userId, selectedDate) {
@@ -128,6 +155,7 @@ export function flushPendingWorkoutLogs(userId) {
     let synced = 0;
     for (const item of readQueue(userId)) {
       if (item.awaitingFeeling) continue;
+      if (item.syncAfter && item.syncAfter > Date.now()) continue;
       try {
         await saveExerciseLogWithSets(
           item.userId,
@@ -148,6 +176,7 @@ export function flushPendingWorkoutLogs(userId) {
     return synced;
   })().finally(() => {
     activeFlush = null;
+    scheduleEligibleFlush(userId);
   });
 
   return activeFlush;

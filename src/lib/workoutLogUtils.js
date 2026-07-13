@@ -326,15 +326,16 @@ export function setsFromDraft(exercise, draft) {
 
 export function addDraftSet(exercise, draft) {
   if (exercise.type === "superset") {
+    const previousParts = draft.sets.at(-1)?.parts ?? [];
     return {
       ...draft,
       sets: [
         ...draft.sets,
         {
-          parts: exercise.exercise_parts.slice(0, 2).map((part) => ({
+          parts: exercise.exercise_parts.slice(0, 2).map((part, index) => ({
             exercise_part_id: part.id,
             name: part.name,
-            weight: "",
+            weight: previousParts[index]?.weight ?? "",
             reps: "",
           })),
         },
@@ -342,13 +343,20 @@ export function addDraftSet(exercise, draft) {
     };
   }
   if (exercise.type === "timed") {
-    return { ...draft, sets: [...draft.sets, { duration: "" }] };
+    return {
+      ...draft,
+      sets: [...draft.sets, { duration: draft.sets.at(-1)?.duration ?? "" }],
+    };
   }
+  const previousWeight = draft.sets.at(-1)?.weight ?? "";
   return {
     ...draft,
     sets: [
       ...draft.sets,
-      { weight: exercise.type === "weighted" ? "" : null, reps: "" },
+      {
+        weight: exercise.type === "weighted" ? previousWeight : null,
+        reps: "",
+      },
     ],
   };
 }

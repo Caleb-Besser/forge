@@ -23,7 +23,7 @@ export default function DashboardCard({
 
   return (
     <article
-      className={`daily-card ${completed ? "is-complete" : "is-pending"} ${dragging ? "is-dragging" : ""} ${dragOver ? "is-drag-over" : ""}`}
+      className={`daily-card ${completed ? "is-complete" : "is-pending"} ${reorderable ? "is-reorderable" : ""} ${dragging ? "is-dragging" : ""} ${dragOver ? "is-drag-over" : ""}`}
       data-exercise-id={exercise.id}
       role="button"
       tabIndex="0"

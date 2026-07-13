@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  addDraftSet,
   draftFromLog,
   durationInputToSeconds,
   formatDurationInput,
@@ -28,6 +29,20 @@ test("weighted logs can be edited without changing their stored values", () => {
 
   const draft = draftFromLog(exercise, log);
   assert.deepEqual(setsFromDraft(exercise, draft), log.exercise_log_sets);
+});
+
+test("new sets carry effort values forward without copying reps", () => {
+  const weighted = addDraftSet(
+    { type: "weighted", exercise_parts: [] },
+    { sets: [{ weight: "105", reps: "15" }] },
+  );
+  assert.deepEqual(weighted.sets[1], { weight: "105", reps: "" });
+
+  const timed = addDraftSet(
+    { type: "timed", exercise_parts: [] },
+    { sets: [{ duration: "01:30" }] },
+  );
+  assert.deepEqual(timed.sets[1], { duration: "01:30" });
 });
 
 test("trend helpers compare total weighted work", () => {
